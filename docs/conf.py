@@ -31,7 +31,7 @@ if on_rtd:
         inspect.getfile(inspect.currentframe())))
 
     output_dir = os.path.join(__location__, "../docs/api")
-    module_dir = os.path.join(__location__, "../python3")
+    module_dir = os.path.join(__location__, "../anomalous")
     cmd_line_template = "sphinx-apidoc -f -o {outputdir} {moduledir}"
     cmd_line = cmd_line_template.format(outputdir=output_dir, moduledir=module_dir)
     apidoc.main(cmd_line.split(" "))
@@ -62,7 +62,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'anomalous'
-copyright = u'2017, Hobson Lane'
+copyright = u'2017, AuthorityLabs'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -128,7 +128,7 @@ html_theme = 'alabaster'
 # The name for this set of Sphinx documents.  If None, it defaults to
 # "<project> v<release> documentation".
 try:
-    from python3 import __version__ as version
+    from anomalous import __version__ as version
 except ImportError:
     pass
 else:
