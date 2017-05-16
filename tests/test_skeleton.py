@@ -5,7 +5,7 @@ import pytest
 from python3.skeleton import fib
 
 __author__ = "Hobson Lane"
-__copyright__ = "Hobson Lane"
+__copyright__ = "AuthorityLabs"
 __license__ = "none"
 
 

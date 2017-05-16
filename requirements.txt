@@ -1,4 +1,2 @@
-# Add your requirements here like:
-# numpy
-# scipy>=0.9
-django
+# requirements are the same as nlpia package
+-e git+git@github.com:totalgood/nlpia.git@master#egg=nlpia
