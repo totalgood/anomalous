@@ -15,16 +15,24 @@ import sys
 import logging
 import datetime
 import json
+import os
 
 import pandas as pd
 
-from python3 import __version__
+from anomalous import __version__
 
 __author__ = "Hobson Lane"
 __copyright__ = "AuthorityLabs"
 __license__ = "none"
 
 logger = logging.getLogger(__name__)
+
+
+def is_valid_file(parser, arg):
+    if not os.path.exists(arg):
+        parser.error("The file {} does not exist!".format(arg))
+    else:
+        return open(arg, 'r')  # return an open file handle
 
 
 def clean_series(series):
@@ -72,10 +80,12 @@ def parse_args(args):
         action='version',
         version='anomalous {ver}'.format(ver=__version__))
     parser.add_argument(
+        "--load",
         dest="filepath",
-        help="n-th Fibonacci number",
-        type=int,
-        metavar="INT")
+        required=False,
+        help="Path to a DataDog json dump of server monitor time series",
+        type=lambda s: is_valid_file(parser, s),
+        metavar="FILE")
     parser.add_argument(
         '-v',
         '--verbose',
