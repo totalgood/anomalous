@@ -78,8 +78,8 @@ def main(args):
     logger.debug(msg)
     print(msg)
     df = clean_df(args.file_or_none)
-    msg = "Loaded {} series from {} with shape {}.".format(
-        len(df.columns), args.file_or_none, df.shape)
+    msg = "Loaded {} series from {} with shape {}:\n{}".format(
+        len(df.columns), args.file_or_none, df.shape, df.describe())
     print(msg)
     logger.debug(msg)
 
