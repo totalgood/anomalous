@@ -66,9 +66,10 @@ def clean_series(series):
     t = pd.Series(pd.np.array(series['pointlist']).T[0],
                   name='datetime')
     t = t.apply(lambda x: datetime.datetime.fromtimestamp(x / 1000.))
+    name = series['display_name'].strip().strip('()-=+!._$%#@*[]{}').lower()[:48]
     ts = pd.Series(pd.np.array(series['pointlist']).T[1],
                    index=t.values,
-                   name=series['display_name'])
+                   name=name)
     return ts
 
 
@@ -88,7 +89,6 @@ def clean_df(file_or_path=None):
         for series in js['series']:
             ts = clean_series(series)
             df[ts.name] = ts
-    print(df.columns)
     return df
 
 
@@ -102,10 +102,53 @@ def load_all(dirpath=os.path.join(DATA_PATH, 'dd')):
 
 def align_samples(df):
     """Undersample, interpolate, or impute values to fill in NaNs"""
-    # df = df.apply(pd.Series.interpolate)
-    imputer = Imputer(missing_values='NaN', strategy='mean', axis=0)
-    dfimp = pd.DataFrame(imputer.fit_transform(df), columns=df.columns, index=df.index)
     scaler = MinMaxScaler()
-    dfscal = pd.DataFrame(scaler.fit_transform(dfimp), columns=df.columns, index=df.index)
+    
+    # df = df.interpolate(limit=100000000000, limit_direction='both', axis=0)
+    # df = df.resample('1s').agg('mean')
+    # df = df.dropna()
+    # df = pd.DataFrame(scaler.fit_transform(df), columns=df.columns, index=df.index)
+
+    # imputer = Imputer(missing_values='NaN', strategy='mean', axis=0)
+    # dfimp = pd.DataFrame(imputer.fit_transform(df), columns=df.columns, index=df.index)
+    # dfscal = pd.DataFrame(scaler.fit_transform(dfimp), columns=df.columns, index=df.index)
+
+    df = load_all().astype(float)
+    df.sort_index()
+    df = df.resample('5min').agg('mean')
+    df_scaled = pd.DataFrame(index=df.index)
+    for col in df.columns:
+        s = df[col].dropna()
+        index = s.index
+        s = s.values.reshape(-1, 1)
+        scaler = MinMaxScaler()
+        scaler = scaler.fit(s)
+        df_scaled[col+'x{:6g}'.format(scaler.scale_[0])] = pd.Series(scaler.transform(s)[:,0], index=index)
+    return df, df_scaled
 
 
+def is_anomalous(df):
+    # bing crawler_nodes > 10
+    # google error rate > 2%
+    # papi > 110k
+    # google reques > 2k
+    # redis connections > 10.5k
+
+    # ex_workers.crawler_nodes.bing                           16.000000
+    # papi.queue.web_insight                              155142.000000
+    # proper.redis.requeue.standard.google                 19556.767578
+    # redis.net.clients                                    11330.875000
+    # workers.us.google.status.901 + workers.us.google        41.577825
+
+    d = {
+        'ex_workers.crawler_nodes.bing': 10,
+        'papi.queue.web_insight': 110000.0,
+        'proper.redis.requeue.standard.google': 2000.0,
+        'redis.net.clients': 10500.0,
+        'workers.us.google.status.901 + workers.us.google': 2.0
+        }
+
+    ans = pd.np.zeros(len(df))
+    for k, v in d.items():
+        ans |= df[k] > v
+    return ans
