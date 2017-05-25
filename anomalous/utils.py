@@ -16,10 +16,12 @@ import os
 import sys
 
 import pandas as pd
-from .constants import logging, DATA_PATH
 
 from pugnlp.futil import find_files
 from sklearn.preprocessing import MinMaxScaler
+
+from .constants import logging, DATA_PATH
+
 
 DEFAULT_JSON_PATH = os.path.join(DATA_PATH, 'dd', 'bing_nodes_online', 'day_1.json')
 
@@ -100,10 +102,13 @@ def load_all(dirpath=os.path.join(DATA_PATH, 'dd')):
     return df
 
 
-def align_samples(df):
+def align_all(df=None, fillna=0):
     """Undersample, interpolate, or impute values to fill in NaNs"""
-    scaler = MinMaxScaler()
-    
+    df = df or os.path.join(DATA_PATH, 'dd')
+    df = load_all(df).astype(float) if isinstance(df, (str, bytes)) else pd.DataFrame(df)
+    df.sort_index(inplace=True)
+    df.fillna(fillna, inplace=True)
+
     # df = df.interpolate(limit=100000000000, limit_direction='both', axis=0)
     # df = df.resample('1s').agg('mean')
     # df = df.dropna()
@@ -113,12 +118,14 @@ def align_samples(df):
     # dfimp = pd.DataFrame(imputer.fit_transform(df), columns=df.columns, index=df.index)
     # dfscal = pd.DataFrame(scaler.fit_transform(dfimp), columns=df.columns, index=df.index)
 
-    df = load_all().astype(float)
+    scaler = MinMaxScaler()
+    df_scaled = pd.DataFrame(scaler.fit_transform(df), index=df.index)
+    df_scaled.columns = ['{}x{:6g}'.format(c, s) for s, c in zip(scaler.scale_, df.columns)]
+
     df.sort_index()
-    df = df.resample('5min').agg('mean')
+    df = df.resample('1min').agg('mean')
     df_scaled = pd.DataFrame(index=df.index)
     for col in df.columns:
-        s = df[col].dropna()
         index = s.index
         s = s.values.reshape(-1, 1)
         scaler = MinMaxScaler()
