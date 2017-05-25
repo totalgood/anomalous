@@ -19,7 +19,7 @@ import pandas as pd
 from .constants import logging, DATA_PATH
 
 from pugnlp.futil import find_files
-from sklearn.preprocessing import Imputer, MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler
 
 DEFAULT_JSON_PATH = os.path.join(DATA_PATH, 'dd', 'bing_nodes_online', 'day_1.json')
 
@@ -148,7 +148,7 @@ def is_anomalous(df):
         'workers.us.google.status.901 + workers.us.google': 2.0
         }
 
-    ans = pd.np.zeros(len(df))
+    ans = pd.np.zeros(len(df)).astype(bool)
     for k, v in d.items():
         ans |= df[k] > v
     return ans
