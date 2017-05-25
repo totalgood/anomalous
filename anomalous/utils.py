@@ -109,28 +109,10 @@ def align_all(df=None, fillna=0):
     df.sort_index(inplace=True)
     df.fillna(fillna, inplace=True)
 
-    # df = df.interpolate(limit=100000000000, limit_direction='both', axis=0)
-    # df = df.resample('1s').agg('mean')
-    # df = df.dropna()
-    # df = pd.DataFrame(scaler.fit_transform(df), columns=df.columns, index=df.index)
-
-    # imputer = Imputer(missing_values='NaN', strategy='mean', axis=0)
-    # dfimp = pd.DataFrame(imputer.fit_transform(df), columns=df.columns, index=df.index)
-    # dfscal = pd.DataFrame(scaler.fit_transform(dfimp), columns=df.columns, index=df.index)
-
     scaler = MinMaxScaler()
     df_scaled = pd.DataFrame(scaler.fit_transform(df), index=df.index)
     df_scaled.columns = ['{}x{:6g}'.format(c, s) for s, c in zip(scaler.scale_, df.columns)]
 
-    df.sort_index()
-    df = df.resample('1min').agg('mean')
-    df_scaled = pd.DataFrame(index=df.index)
-    for col in df.columns:
-        index = s.index
-        s = s.values.reshape(-1, 1)
-        scaler = MinMaxScaler()
-        scaler = scaler.fit(s)
-        df_scaled[col+'x{:6g}'.format(scaler.scale_[0])] = pd.Series(scaler.transform(s)[:,0], index=index)
     return df, df_scaled
 
 
