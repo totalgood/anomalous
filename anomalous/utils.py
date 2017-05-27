@@ -20,6 +20,10 @@ import pandas as pd
 from pugnlp.futil import find_files
 from sklearn.preprocessing import MinMaxScaler
 
+import plotly
+from plotly import offline
+import cufflinks
+
 from .constants import logging, DATA_PATH
 
 
@@ -102,42 +106,101 @@ def load_all(dirpath=os.path.join(DATA_PATH, 'dd')):
     return df
 
 
-def align_all(df=None, fillna=0):
+def clean_all(df=None, fillna_method='ffill', dropna=True, consolidate_index=False):
     """Undersample, interpolate, or impute values to fill in NaNs"""
-    df = df or os.path.join(DATA_PATH, 'dd')
-    df = load_all(df).astype(float) if isinstance(df, (str, bytes)) else pd.DataFrame(df)
+    df = os.path.join(DATA_PATH, 'dd') if df is None else df
+    df = load_all(df).astype(float) if isinstance(df, str) else pd.DataFrame(df)
+
     df.sort_index(inplace=True)
-    df.fillna(fillna, inplace=True)
+    df = df.reindex()
+    if consolidate_index:
+        df = df[~df.index.duplicated(keep='last')]
+        df = df.reindex()
+    df.fillna(method=fillna_method, inplace=True, axis=0)
+    # ^ this leaves a few NaNs at the beginning, start them at 0:
+    if dropna is True:
+        df.dropna(inplace=True)
+    else:
+        df.fillna(value=0, inplace=True)
+    return df
+
+
+def scale_all(df=None, fillna_method='ffill', dropna=False):
+    df = os.path.join(DATA_PATH, 'dd') if df is None else df
+    df = clean_all(df, fillna_method=fillna_method, dropna=dropna).astype(float) if isinstance(df, str) else pd.DataFrame(df)
 
     scaler = MinMaxScaler()
-    df_scaled = pd.DataFrame(scaler.fit_transform(df), index=df.index)
-    df_scaled.columns = ['{}x{:6g}'.format(c, s) for s, c in zip(scaler.scale_, df.columns)]
+    df = pd.DataFrame(scaler.fit_transform(df), index=df.index)
+    df.columns = ['{}x{:6g}'.format(c, s) for s, c in zip(scaler.scale_, df.columns)]
+    return df
 
-    return df, df_scaled
 
+def is_anomalous(df, thresholds=None):
+    """ Compose DataFrame indicating which signal exceed predetermined thresholds
 
-def is_anomalous(df):
-    # bing crawler_nodes > 10
-    # google error rate > 2%
-    # papi > 110k
-    # google reques > 2k
-    # redis connections > 10.5k
+    Example Thresholds:
+    
+    - bing crawler_nodes > 10
+    - google error rate > 2%
+    - papi > 110k
+    - google reques > 2k
+    - redis connections > 10.5k
 
+    # >>> df.max()
     # ex_workers.crawler_nodes.bing                           16.000000
     # papi.queue.web_insight                              155142.000000
     # proper.redis.requeue.standard.google                 19556.767578
     # redis.net.clients                                    11330.875000
     # workers.us.google.status.901 + workers.us.google        41.577825
+    """
 
-    d = {
-        'ex_workers.crawler_nodes.bing': 10,
-        'papi.queue.web_insight': 110000.0,
-        'proper.redis.requeue.standard.google': 2000.0,
-        'redis.net.clients': 10500.0,
-        'workers.us.google.status.901 + workers.us.google': 2.0
-        }
+    if thresholds is None:
+        thresholds = {
+            'ex_workers.crawler_nodes.bing': 10,
+            'papi.queue.web_insight': 110000.0,
+            'proper.redis.requeue.standard.google': 2000.0,
+            'redis.net.clients': 10500.0,
+            'workers.us.google.status.901 + workers.us.google': 2.0
+            }
 
-    ans = pd.np.zeros(len(df)).astype(bool)
-    for k, v in d.items():
-        ans |= df[k] > v
+    ans = pd.DataFrame(pd.np.zeros((len(df), len(thresholds) + 1)).astype(bool),
+                       columns=[k + '__anomaly' for k in list(thresholds)] + ['any_anomaly'],
+                       index=df.index)
+    for dfk, ansk in zip(df.columns, ans.columns):
+        ans[ansk] = df[dfk] > thresholds[dfk]
+        ans['any_anomaly'] |= ans[ansk]
     return ans
+
+
+def join_spans(spans):
+    spans = list(spans)
+    joined_spans = [list(spans[0])]
+    for i, (start, stop) in enumerate(spans[1:]):
+        if start > joined_spans[i][1]:
+            joined_spans += [[start, stop]]
+        else:
+            joined_spans[i - 1][1] = stop
+    return joined_spans
+
+
+def plot_all(df=None, fillna_method='ffill', dropna=False, filename='time-series.html'):
+    df = os.path.join(DATA_PATH, 'dd') if df is None else df
+    df = clean_all(df, fillna_method=fillna_method, dropna=dropna).astype(float) if isinstance(df, str) else pd.DataFrame(df)
+
+    anoms = is_anomalous(df)
+    anom_spans = anoms['any_anomaly'].astype(int).diff().fillna(0)
+    starts = list(df.index[anom_spans > 0])
+    stops = list(df.index[anom_spans < 0])
+    if len(stops) == len(starts) - 1:
+        stops += [df.index.values[-1]]
+    anom_spans = join_spans(join_spans(zip(starts, stops)))
+
+    print(anom_spans)
+
+    df['Num. Anomalous Monitors'] = (anoms[anoms.columns[:-1]].sum(axis=1) + .01)
+    offline.plot(df.iplot(
+        asFigure=True, xTitle='Date-Time', yTitle='Monitor Value', kind='scatter', logy=True,
+        vspan=anom_spans),
+        filename=filename,
+        )
+         
