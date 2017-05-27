@@ -203,4 +203,5 @@ def plot_all(df=None, fillna_method='ffill', dropna=False, filename='time-series
         vspan=anom_spans),
         filename=filename,
         )
+    return df
          
