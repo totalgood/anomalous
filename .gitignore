@@ -43,3 +43,7 @@ MANIFEST
 
 # DataDog dumps
 anomalous/data/dd/*
+
+# Secrets
+secret*
+!secrets.cfg.EXAMPLE_TEMPLATE

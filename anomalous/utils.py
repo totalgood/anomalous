@@ -10,24 +10,31 @@ from future import standard_library
 standard_library.install_aliases()  # noqa
 from builtins import *  # noqa
 
+import time
 import datetime
 import json
 import os
 import sys
+import re
 
 import pandas as pd
 
-from pugnlp.futil import find_files
+from pugnlp.futil import find_files, read_json
 from sklearn.preprocessing import MinMaxScaler
 
-import plotly
+# import plotly
 from plotly import offline
-import cufflinks
+import cufflinks  # noqa
 
-from .constants import logging, DATA_PATH
-
+import datadog as dd
+from dogapi.http import DogHttpApi
+from .constants import logging, DATA_PATH, secrets
 
 DEFAULT_JSON_PATH = os.path.join(DATA_PATH, 'dd', 'bing_nodes_online', 'day_1.json')
+DATADOG_OPTIONS = secrets.datadog.__dict__
+
+api = DogHttpApi(api_key=secrets.datadog.api_key, application_key=secrets.datadog.app_key)
+dd.initialize(api_key=secrets.datadog.api_key, app_key=secrets.datadog.app_key)
 
 __author__ = "Hobson Lane"
 __copyright__ = "AuthorityLabs"
@@ -61,9 +68,8 @@ def argparse_open_file(parser, s, mode='r', allow_none=True):
 def read_series(file_or_path=None, i=0):
     """Convert a DataDog "series" json file into a Pandas Series"""
     file_or_path = file_or_path or DEFAULT_JSON_PATH
-    with (open(file_or_path, 'r') if isinstance(file_or_path, (str, bytes)) else file_or_path) as f:
-        js = json.load(f)
-        ts = pd.Series(js['series'][i])
+    js = read_json(file_or_path)
+    ts = pd.Series(js['series'][i])
     return ts
 
 
@@ -72,7 +78,9 @@ def clean_series(series):
     t = pd.Series(pd.np.array(series['pointlist']).T[0],
                   name='datetime')
     t = t.apply(lambda x: datetime.datetime.fromtimestamp(x / 1000.))
-    name = series['display_name'].strip().strip('()-=+!._$%#@*[]{}').lower()[:48]
+    name = series['display_name'].strip().strip('()-=+!._$%#@*[]{}').lower()
+    name = series['scope'].strip().strip('()-=+!._$%#@*[]{}') + name
+    name = name[:48]
     ts = pd.Series(pd.np.array(series['pointlist']).T[1],
                    index=t.values,
                    name=name)
@@ -89,12 +97,18 @@ def clean_df(file_or_path=None):
       pd.Series: Pandas Series with the timestamp as the index and a series name composed from the file path
     """
     file_or_path = file_or_path or os.path.join(DATA_PATH, 'dd', 'bing_nodes_online', 'day_1.json')
-    with (open(file_or_path, 'r') if isinstance(file_or_path, (str, bytes)) else file_or_path) as f:
-        js = json.load(f)
-        df = pd.DataFrame()
-        for series in js['series']:
-            ts = clean_series(series)
-            df[ts.name] = ts
+    df = pd.DataFrame()
+    if isinstance(file_or_path, (list, dict)):
+        js = file_or_path
+    else:
+        try:
+            with (open(file_or_path, 'r') if isinstance(file_or_path, (str, bytes)) else file_or_path) as f:
+                js = json.load(f)
+        except IOError:
+            js = json.loads(file_or_path)
+    for series in js['series']:
+        ts = clean_series(series)
+        df[ts.name] = ts
     return df
 
 
@@ -139,7 +153,7 @@ def is_anomalous(df, thresholds=None):
     """ Compose DataFrame indicating which signal exceed predetermined thresholds
 
     Example Thresholds:
-    
+
     - bing crawler_nodes > 10
     - google error rate > 2%
     - papi > 110k
@@ -204,4 +218,36 @@ def plot_all(df=None, fillna_method='ffill', dropna=False, filename='time-series
         filename=filename,
         )
     return df
-         
+
+
+def get_dd_hosts(pattern='', regex=''):
+    """Get a list of host names filtered by a DataDog query pattern (default='') and regex (default='')
+
+    >>> get_dd_hosts()
+    ['balancer.1.api.authoritylabs.com',
+    ...
+    'worker.us.js.test.05.api.superioritylabs.com']
+    >>> get_dd_hosts(regex='[.]test[.]')
+    ['worker.us.js.test.01.api.superioritylabs.com',
+     'worker.us.js.test.02.api.superioritylabs.com',
+     'worker.us.js.test.03.api.superioritylabs.com',
+     'worker.us.js.test.04.api.superioritylabs.com',
+     'worker.us.js.test.05.api.superioritylabs.com']
+    >>> get_dd_hosts(regex='^[.]test[.]$')
+    []
+    """
+    hosts = api.search('hosts:{}'.format(pattern))['hosts']
+    if regex:
+        regex = re.compile(regex)
+        return [h for h in hosts if regex.search(h)]
+    return hosts
+
+
+def get_dd_metric(metric='system.cpu.idle', start=None, end=None):
+    end = end or int(time.time())
+    start = start or end - 3600 * 24
+    global dd
+    # dd.initialize(**DATADOG_OPTIONS)
+    query = '{}\{*\}by\{host\}'.format(metric)
+    metric = dd.api.Metric.query(start=start, end=end, query=query)
+    return clean_df(metric)
