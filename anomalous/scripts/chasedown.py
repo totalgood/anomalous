@@ -12,12 +12,11 @@ from builtins import *  # noqa
 
 import argparse
 import sys
-import os
 
-from anomalous.utils import stdout_logging, argparse_open_file, clean_df
+from anomalous.utils import stdout_logging, argparse_open_file, argparse_datetime_span, clean_df
 
 from anomalous import __version__
-from anomalous.constants import logging, DATA_PATH
+from anomalous.constants import logging  # , DATA_PATH
 
 __author__ = "Hobson Lane"
 __copyright__ = "AuthorityLabs"
@@ -36,29 +35,31 @@ def parse_args(args):
       :obj:`argparse.Namespace`: command line parameters namespace
     """
     parser = argparse.ArgumentParser(
-        description="Load DataDog json files into a pandas DataFrame")
+        description="(Down)load DataDog json files into a pandas DataFrame (flatfile DB) and interactively flag anomalies")
     parser.add_argument(
         '--version',
         action='version',
         version='anomalous {ver}'.format(ver=__version__))
     parser.add_argument(
-        "--load",
-        dest="file_or_none",
-        default=os.path.join(DATA_PATH, 'dd', 'bing_nodes_online', 'day_1.json'),
-        required=False,
-        help="Path to a DataDog json dump of server monitor time series",
+        '-l', '--load',
+        dest="file_or_none", required=False,  # default=os.path.join(DATA_PATH, 'dd', 'bing_nodes_online', 'day_1.json'),
+        help="Path to a DataDog json dump of server monitor time series, e.g. anomalous/data/dd/bing_nodes_online/day_1.json",
         type=lambda s: argparse_open_file(parser, s, mode='r', allow_none=True),
         metavar="FILE")
     parser.add_argument(
-        '-v',
-        '--verbose',
+        '-u', '--update',
+        dest="file_or_none", required=False, default=None,
+        help="Query datadog for past 24 hours of data and append to local 'database' (csv) of historical metric data.",
+        type=lambda s: argparse_datetime_span(parser, s, allow_none=True),
+        metavar="UPDATE")
+    parser.add_argument(
+        '-v', '--verbose',
         dest="loglevel",
         help="set loglevel to INFO",
         action='store_const',
         const=logging.INFO)
     parser.add_argument(
-        '-vv',
-        '--very-verbose',
+        '-vv', '--very-verbose',
         dest="loglevel",
         help="set loglevel to DEBUG",
         action='store_const',

@@ -18,6 +18,8 @@ import sys
 import re
 
 import pandas as pd
+import dateutil
+import timestring
 
 from pugnlp.futil import find_files, read_json
 from sklearn.preprocessing import MinMaxScaler
@@ -63,6 +65,49 @@ def argparse_open_file(parser, s, mode='r', allow_none=True):
         return False
     else:
         return open(s, mode=mode)  # return an open file handle
+
+
+def parse_datetime_span(s, allow_none=True):
+    """Parse a datetime string and extract any datetime or datetime ranges described within the text
+
+    >>> parse_datetime_span('What time would your like to meet? 5:45 today in room B512?')
+    (datetime.datetime(20... 5, 45), datetime.datetime(20...))
+    """
+    if allow_none and s is None:
+        return None
+    now = datetime.datetime.now()
+    try:
+        span = timestring.Range(s)
+        if (span.end.date - span.start.date).total_seconds() > 0:
+            return span.start.date, span.end.date
+        else:
+            return span.end.date, span.start.date
+    except timestring.TimestringInvalid:
+        pass
+    try:
+        date = timestring.Date(s).date
+        assert (now - date).total_seconds() > 0
+        return date, now
+    except timestring.TimestringInvalid:
+        pass
+    date = dateutil.parser.parse(s)
+    assert (now - date).total_seconds() > 0
+    return date, now
+
+
+def argparse_datetime_span(parser, s, allow_none=True):
+    """Parse a datetime string and extract any datetime or datetime ranges described within the text
+
+    >>> argparse_datetime_span('What time would your like to meet? 5:45 today in room B512?')
+    (<timestring.Date 2017-06-06 05:45:00 140134918475616>
+    """
+    try:
+        return parse_datetime_span(s, allow_none=allow_none)
+    except (timestring.TimestringInvalid, ValueError):
+        parser.error("Unable to extract any datetimes from \"{}\"".format(s))
+    except AssertionError:
+        parser.error("Datetime(s) for the string \"{}\" are in the future.".format(s))
+    return False
 
 
 def read_series(file_or_path=None, i=0):
