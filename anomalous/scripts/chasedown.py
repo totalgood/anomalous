@@ -13,7 +13,7 @@ from builtins import *  # noqa
 import argparse
 import sys
 
-from anomalous.utils import stdout_logging, argparse_open_file, argparse_datetime_span, clean_df
+from anomalous.utils import stdout_logging, argparse_open_file, argparse_datetime_span, clean_df, get_dd_metrics
 
 from anomalous import __version__
 from anomalous.constants import logging  # , DATA_PATH
@@ -48,22 +48,33 @@ def parse_args(args):
         metavar="FILE")
     parser.add_argument(
         '-u', '--update',
-        dest="file_or_none", required=False, default=None,
+        dest="span", required=False, default='24 hours ago',
         help="Query datadog for past 24 hours of data and append to local 'database' (csv) of historical metric data.",
         type=lambda s: argparse_datetime_span(parser, s, allow_none=True),
         metavar="UPDATE")
     parser.add_argument(
+        '-s', '--servers',
+        help="Servers (FQDN or hostnames) for servers with Datadog monitor metrics to retrieve.",
+        type=str,
+        metavar="SERVERS")
+    parser.add_argument(
+        '-m', '--metrics',
+        help="Metric names or filters on metric names.",
+        type=str,
+        metavar="METRICS")
+    parser.add_argument(
         '-v', '--verbose',
-        dest="loglevel",
-        help="set loglevel to INFO",
+        dest="loglevel", default=logging.WARN,
+        help="Verbose stdout logging (set loglevel to INFO).",
         action='store_const',
         const=logging.INFO)
     parser.add_argument(
         '-vv', '--very-verbose',
         dest="loglevel",
-        help="set loglevel to DEBUG",
+        help="Very verbose logging (set loglevel to DEBUG).",
         action='store_const',
         const=logging.DEBUG)
+
     return parser.parse_args(args)
 
 
@@ -75,14 +86,18 @@ def main(args):
     """
     args = parse_args(args)
     stdout_logging(args.loglevel)
-    msg = "Loading {}...".format(args.file_or_none)
-    logger.debug(msg)
+    msg = "Arguments:\n{}".format(args.__dict__)
+    logger.info(msg)
     print(msg)
-    df = clean_df(args.file_or_none)
+    if args.file_or_none is None:
+        if isinstance(args.span, tuple):
+            df = get_dd_metrics(metric_name=args.metrics, servers=args.servers, start=args.span[0], end=args.span[1])
+    else:
+        df = clean_df(args.file_or_none)
     msg = "Loaded {} series from {} with shape {}:\n{}".format(
         len(df.columns), args.file_or_none, df.shape, df.describe())
-    print(msg)
-    logger.debug(msg)
+    # print(msg)
+    logger.info(msg)
 
 
 def run():

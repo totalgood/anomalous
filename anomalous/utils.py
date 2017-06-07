@@ -28,21 +28,30 @@ from sklearn.preprocessing import MinMaxScaler
 from plotly import offline
 import cufflinks  # noqa
 
-import datadog as dd
+import datadog as dd  # noqa
 from dogapi.http import DogHttpApi
 from .constants import logging, DATA_PATH, secrets
 
 DEFAULT_JSON_PATH = os.path.join(DATA_PATH, 'dd', 'bing_nodes_online', 'day_1.json')
 DATADOG_OPTIONS = secrets.datadog.__dict__
 
-api = DogHttpApi(api_key=secrets.datadog.api_key, application_key=secrets.datadog.app_key)
-dd.initialize(api_key=secrets.datadog.api_key, app_key=secrets.datadog.app_key)
+api = None
+dd = dd
+
 
 __author__ = "Hobson Lane"
 __copyright__ = "AuthorityLabs"
 __license__ = "none"
 
 logger = logging.getLogger(__name__)
+
+
+def dd_initialize(api_key=secrets.datadog.api_key, app_key=secrets.datadog.app_key):
+    global api, dd
+    if api is None:
+        api = DogHttpApi(api_key=api_key, application_key=app_key, json_responses=False)
+        dd.initialize(api_key=api_key, app_key=app_key)
+    return dd, api
 
 
 def stdout_logging(loglevel=logging.INFO):
@@ -72,13 +81,21 @@ def parse_datetime_span(s, allow_none=True):
 
     >>> parse_datetime_span('What time would your like to meet? 5:45 today in room B512?')
     (datetime.datetime(20... 5, 45), datetime.datetime(20...))
+    >>> span = parse_datetime_span('24 hours ago')
+    >>> span[1] - span[0]
+    datetime.timedelta(1)
+    >>> datetime.datetime.now() - span[1]
+    datetime.timedelta(0, 0, ...)
     """
     if allow_none and s is None:
         return None
     now = datetime.datetime.now()
     try:
         span = timestring.Range(s)
-        if (span.end.date - span.start.date).total_seconds() > 0:
+        if (span.end.date.toordinal() == datetime.date.today().toordinal() and
+                span.start.date - span.end.date == datetime.timedelta(-1)):
+            return now - datetime.timedelta(1), now
+        elif (span.end.date - span.start.date).total_seconds() > 0:
             return span.start.date, span.end.date
         else:
             return span.end.date, span.start.date
@@ -140,6 +157,8 @@ def clean_df(file_or_path=None):
 
     Returns:
       pd.Series: Pandas Series with the timestamp as the index and a series name composed from the file path
+
+    >>> clean_df
     """
     file_or_path = file_or_path or os.path.join(DATA_PATH, 'dd', 'bing_nodes_online', 'day_1.json')
     df = pd.DataFrame()
@@ -151,7 +170,9 @@ def clean_df(file_or_path=None):
                 js = json.load(f)
         except IOError:
             js = json.loads(file_or_path)
-    for series in js['series']:
+    js = js.get('series', js) if hasattr(js, 'get') else js
+    js = js if isinstance(js, list) else [js]
+    for series in js:
         ts = clean_series(series)
         df[ts.name] = ts
     return df
@@ -281,6 +302,8 @@ def get_dd_hosts(pattern='', regex=''):
     >>> get_dd_hosts(regex='^[.]test[.]$')
     []
     """
+    global dd, api
+    dd_initialize()
     hosts = api.search('hosts:{}'.format(pattern))['hosts']
     if regex:
         regex = re.compile(regex)
@@ -288,11 +311,12 @@ def get_dd_hosts(pattern='', regex=''):
     return hosts
 
 
-def get_dd_metric(metric='system.cpu.idle', start=None, end=None):
+def get_dd_metrics(metric_name='system.cpu.idle', servers=None, start=None, end=None):
+    global dd, api
+    dd_initialize()  # noqa
     end = end or int(time.time())
     start = start or end - 3600 * 24
-    global dd
-    # dd.initialize(**DATADOG_OPTIONS)
-    query = '{}\{*\}by\{host\}'.format(metric)
-    metric = dd.api.Metric.query(start=start, end=end, query=query)
-    return clean_df(metric)
+    query = metric_name + r'{*}by{host}'  # 'system.cpu.idle{*}by{host}'
+    # series = dd.api.Metric.query(start=now - 3600 * 24, end=now, query=query)
+    series = dd.api.Metric.query(start=start, end=end, query=query)
+    return clean_df(series)
