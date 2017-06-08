@@ -60,7 +60,8 @@ logging.config.dictConfig(LOGGING)
 logger = logging.getLogger(__name__)
 
 
-# rename secrets.cfg.EXAMPLE_TEMPLATE -> secrets.cfg then edit secrets.cfg to include your actual credentials
+# rename secrets.cfg.EXAMPLE_TEMPLATE -> secrets.cfg
+# then edit secrets.cfg to include your actual credentials
 secrets = configparser.RawConfigParser()
 try:
     secrets.read(os.path.join(PROJECT_PATH, 'secrets.cfg'))

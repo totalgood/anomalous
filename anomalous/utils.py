@@ -16,20 +16,21 @@ import json
 import os
 import sys
 import re
+import configparser
+from collections import Mapping
 
 import pandas as pd
 import dateutil
 import timestring
-
-from pugnlp.futil import find_files, read_json
 from sklearn.preprocessing import MinMaxScaler
-
-# import plotly
 from plotly import offline
 import cufflinks  # noqa
-
 import datadog as dd  # noqa
 from dogapi.http import DogHttpApi
+
+from pugnlp.futil import find_files, read_json
+from pugnlp.util import dict2obj
+
 from .constants import logging, DATA_PATH, secrets
 
 DEFAULT_JSON_PATH = os.path.join(DATA_PATH, 'dd', 'bing_nodes_online', 'day_1.json')
@@ -76,7 +77,7 @@ def argparse_open_file(parser, s, mode='r', allow_none=True):
         return open(s, mode=mode)  # return an open file handle
 
 
-def parse_datetime_span(s, allow_none=True):
+def parse_datetime_span(s, allow_none=True, default='past 24 hours'):
     """Parse a datetime string and extract any datetime or datetime ranges described within the text
 
     >>> parse_datetime_span('What time would your like to meet? 5:45 today in room B512?')
@@ -87,8 +88,9 @@ def parse_datetime_span(s, allow_none=True):
     >>> datetime.datetime.now() - span[1]
     datetime.timedelta(0, 0, ...)
     """
-    if allow_none and s is None:
-        return None
+    s = s if allow_none else (default if s is None else s)
+    if s is None:
+        return s
     now = datetime.datetime.now()
     try:
         span = timestring.Range(s)
@@ -311,12 +313,109 @@ def get_dd_hosts(pattern='', regex=''):
     return hosts
 
 
-def get_dd_metrics(metric_name='system.cpu.idle', servers=None, start=None, end=None):
+def toordinal(obj, allow_none=True):
+    """Convert a str, timestring.Date, datetime.date, or datetime.datetime to an ordinal (integer days since 1 AD)
+
+    >>> toordinal('Christmas in 1984')
+    724435
+    >>> toordinal(datetime.datetime(2017, 6, 1, 2, 34, 56))
+    736481
+    """
+    if allow_none and obj is None:
+        return None
+    if isinstance(obj, int):
+        return obj
+    if hasattr(obj, 'toordinal'):
+        return obj.toordinal()
+    if hasattr(obj, 'to_pydatetime'):
+        return toordinal(obj.to_pydatetime())()
+    if hasattr(obj, 'to_datetime'):
+        return toordinal(obj.to_datetime())()
+    if hasattr(obj, 'date') and not callable(obj.date):
+        return toordinal(obj.date)
+    if isinstance(obj, str):
+        return toordinal(timestring.Date(obj))
+    raise ValueError('Unable to coerce {} into an int ordinal (datetime.toordinal() days since 01 AD'.format(obj))
+
+
+def timestamp(obj, allow_none=True):
+    """Convert a str, timestring.Date, datetime.date, or datetime.datetime to an ordinal (float seconds since 1 AD)
+
+    >>> timestamp('Christmas in 1984')
+    timestamp('Christmas in 1984')
+    >>> 1970 + timestamp(datetime.datetime(2017, 6, 1, 2, 34, 56)) / 365.25 / 24. / 3600.
+    2017.41519304383...
+    """
+    if allow_none and obj is None:
+        return None
+    if isinstance(obj, float):
+        return obj
+    if hasattr(obj, 'timestamp'):
+        if callable(obj.timestamp):
+            return obj.timestamp()
+        return timestamp(obj.timestamp)
+    if hasattr(obj, 'to_pydatetime'):
+        return timestamp(obj.to_pydatetime())()
+    if hasattr(obj, 'to_datetime'):
+        return timestamp(obj.to_datetime())()
+    if hasattr(obj, 'date') and not callable(obj.date):
+        return timestamp(obj.date)
+    if isinstance(obj, str):
+        return timestamp(timestring.Date(obj))
+    raise ValueError('Unable to coerce {} into a timestamp (datetime.timestamp() float seconds since 1970-01-01 00:00:00'.format(obj))
+
+
+def get_dd_metrics(metric_name=None, servers=None, start=None, end=None):
+    metric_name = metric_name or 'system.cpu.idle'
     global dd, api
     dd_initialize()  # noqa
-    end = end or int(time.time())
-    start = start or end - 3600 * 24
+    end = int(timestamp(end or time.time()))
+    start = int(timestamp(start or end - 3600. * 24.))
     query = metric_name + r'{*}by{host}'  # 'system.cpu.idle{*}by{host}'
     # series = dd.api.Metric.query(start=now - 3600 * 24, end=now, query=query)
+    logger.debug('start={}, end={}, query={}'.format(start, end, query))
     series = dd.api.Metric.query(start=start, end=end, query=query)
     return clean_df(series)
+
+
+def parse_config(path='config.cfg', section='chasedown'):
+    config = configparser.RawConfigParser()
+    try:
+        config.read(path)
+        config = config._sections
+        config = config[section] if section else config
+    except IOError:
+        logger.error('Unable to load/parse .cfg file at "{}". Does it exist?'.format(
+            path))
+        config = {}
+
+    return dict2obj(config)
+
+
+def update_config_dict(config, args, skip_nones=True):
+    """Update configuration (from configparser) dict with args dict (from argparser) ignoring None in args
+
+    `args` values override `config` values unless the args value is None and `skip_nones` is True
+
+    >>> update_config_dict({'x': 1, 'y': None, 'zz': 'zzz...'}, {'x': None, 'zz': 'She is woke!'})
+    {'x': 1, 'y': None, 'zz': 'She is woke!'}
+    """
+    args = dict([(k, v) for (k, v) in args.items() if (not skip_nones or v is not None or k not in config)])
+    config.update(args)
+    return config
+
+
+def update_config(config, args, skip_nones=True):
+    """Update configuration (from configparser) object with args object (from argparser)
+
+    SEE: argparse_config package
+    `args` values override `config` values unless the args value is None and `skip_nones` is True
+
+    >>> update_config(dict2obj({'x': 1, 'y': None, 'zz': 'zzz...'}),
+    ...               dict2obj({'x': None, 'zz': 'She is woke!'})
+    ...              ).__dict__
+    {'x': 1, 'y': None, 'zz': 'She is woke!'}
+    """
+    config = config if isinstance(config, Mapping) else config.__dict__
+    args = args if isinstance(args, Mapping) else args.__dict__
+    return dict2obj(update_config_dict(config, args, skip_nones=skip_nones))

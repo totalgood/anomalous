@@ -12,11 +12,13 @@ from builtins import *  # noqa
 
 import argparse
 import sys
-
-from anomalous.utils import stdout_logging, argparse_open_file, argparse_datetime_span, clean_df, get_dd_metrics
+import os
+import datetime
 
 from anomalous import __version__
-from anomalous.constants import logging  # , DATA_PATH
+from anomalous.constants import logging, DATA_PATH
+from anomalous.utils import stdout_logging, argparse_open_file, argparse_datetime_span, clean_df, get_dd_metrics
+from anomalous.utils import parse_config, update_config
 
 __author__ = "Hobson Lane"
 __copyright__ = "AuthorityLabs"
@@ -47,9 +49,15 @@ def parse_args(args):
         type=lambda s: argparse_open_file(parser, s, mode='r', allow_none=True),
         metavar="FILE")
     parser.add_argument(
-        '-u', '--update',
-        dest="span", required=False, default='24 hours ago',
-        help="Query datadog for past 24 hours of data and append to local 'database' (csv) of historical metric data.",
+        '-d', '--db', '--database',
+        dest="db", required=False,
+        help="Path to a directory containing .csv.gz, .pkl, and .cfg files containing historical data, models, and configuration files.",
+        type=str,
+        metavar="DIR")
+    parser.add_argument(
+        '-t', '--timespan',
+        dest="timespan", required=False,
+        help="time span to query datadog for metrics and append to a local 'database' (csv) of historical data, e.g. 'past 24 hours'",
         type=lambda s: argparse_datetime_span(parser, s, allow_none=True),
         metavar="UPDATE")
     parser.add_argument(
@@ -89,14 +97,27 @@ def main(args):
     msg = "Arguments:\n{}".format(args.__dict__)
     logger.info(msg)
     print(msg)
-    if args.file_or_none is None:
-        if isinstance(args.span, tuple):
-            df = get_dd_metrics(metric_name=args.metrics, servers=args.servers, start=args.span[0], end=args.span[1])
+    config = parse_config(path=os.path.join(args.db or os.path.join(DATA_PATH, 'db'), 'config.cfg'))
+    config.timespan = argparse_datetime_span(None, getattr(config, 'timespan', None), allow_none=True)
+    msg = "Config:\n{}".format(config.__dict__)
+    logger.info(msg)
+    config = update_config(config, args)
+    msg = "config.update(args):\n{}".format(config.__dict__)
+    logger.info(msg)
+    # TODO: datadog query is first priority, but can't we do both a query and a file?
+    if isinstance(config.timespan, tuple):
+        start, end = config.timespan
+    elif config.file_or_none is None:
+        now = datetime.datetime.now()
+        start, end = (now - datetime.timedelta(1), now)
+
+    if config.file_or_none is None:
+        df = get_dd_metrics(metric_name=config.metrics, servers=config.servers, start=start, end=end)
     else:
-        df = clean_df(args.file_or_none)
+        df = clean_df(config.file_or_none)
+
     msg = "Loaded {} series from {} with shape {}:\n{}".format(
-        len(df.columns), args.file_or_none, df.shape, df.describe())
-    # print(msg)
+        len(df.columns), config.file_or_none, df.shape, df.describe())
     logger.info(msg)
 
 
