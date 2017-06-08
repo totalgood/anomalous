@@ -15,6 +15,9 @@ import sys
 import os
 import datetime
 
+import pandas as pd
+from nlpia.data.loaders import read_csv
+
 from anomalous import __version__
 from anomalous.constants import logging, DATA_PATH
 from anomalous.utils import stdout_logging, argparse_open_file, argparse_datetime_span, clean_df, get_dd_metrics
@@ -104,6 +107,7 @@ def main(args):
     config = update_config(config, args)
     msg = "config.update(args):\n{}".format(config.__dict__)
     logger.info(msg)
+
     # TODO: datadog query is first priority, but can't we do both a query and a file?
     if isinstance(config.timespan, tuple):
         start, end = config.timespan
@@ -118,6 +122,18 @@ def main(args):
 
     msg = "Loaded {} series from {} with shape {}:\n{}".format(
         len(df.columns), config.file_or_none, df.shape, df.describe())
+    logger.info(msg)
+
+    config.db_csv = os.path.join(config.db, 'db.csv.gz')
+    if os.path.isfile(config.db_csv):
+        db = read_csv(os.path.join(config.db_csv, 'db.csv.gz'))
+    else:
+        db = pd.DataFrame()
+    db = db.append(df)
+    db.to_csv(config.db_csv)
+
+    msg = "Saved {} series in updated db with shape {} to {}:\n{}".format(
+        len(db.columns), db.shape, config.db_csv, db.describe())
     logger.info(msg)
 
 
