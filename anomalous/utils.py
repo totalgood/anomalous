@@ -16,7 +16,7 @@ import json
 import os
 import sys
 import re
-import configparser
+import pickle
 from collections import Mapping
 
 import pandas as pd
@@ -30,11 +30,13 @@ from dogapi.http import DogHttpApi
 
 from pugnlp.futil import find_files, read_json
 from pugnlp.util import dict2obj
+from nlpia.data.loaders import read_csv
 
-from .constants import logging, DATA_PATH, secrets
+from .constants import logging, SECRETS
+from .constants import DATA_PATH, DEFAULT_JSON_PATH, DEFAULT_DB_CSV_PATH, DEFAULT_META_PATH, DEFAULT_MODEL_PATH
+from .constants import NAME_STRIP_CHRS, CFG
 
-DEFAULT_JSON_PATH = os.path.join(DATA_PATH, 'dd', 'bing_nodes_online', 'day_1.json')
-DATADOG_OPTIONS = secrets.datadog.__dict__
+DATADOG_OPTIONS = SECRETS.datadog.__dict__
 
 api = None
 dd = dd
@@ -47,7 +49,7 @@ __license__ = "none"
 logger = logging.getLogger(__name__)
 
 
-def dd_initialize(api_key=secrets.datadog.api_key, app_key=secrets.datadog.app_key):
+def dd_initialize(api_key=SECRETS.datadog.api_key, app_key=SECRETS.datadog.app_key):
     global api, dd
     if api is None:
         api = DogHttpApi(api_key=api_key, application_key=app_key, json_responses=False)
@@ -91,6 +93,7 @@ def parse_datetime_span(s, allow_none=True, default='past 24 hours'):
     s = s if allow_none else (default if s is None else s)
     if s is None:
         return s
+    s = s.strip().strip("'")  # otherwise the quote "'24 hours ago'" will produce a time 1 hour ago.
     now = datetime.datetime.now()
     try:
         span = timestring.Range(s)
@@ -137,21 +140,28 @@ def read_series(file_or_path=None, i=0):
     return ts
 
 
-def clean_series(series):
+def clean_dd_series(series):
     """Convert a DataDog "series" dictionary to a Pandas Series"""
-    t = pd.Series(pd.np.array(series['pointlist']).T[0],
-                  name='datetime')
-    t = t.apply(lambda x: datetime.datetime.fromtimestamp(x / 1000.))
-    name = series['display_name'].strip().strip('()-=+!._$%#@*[]{}').lower()
-    name = series['scope'].strip().strip('()-=+!._$%#@*[]{}') + name
+    # t = pd.Series(pd.np.array(series['pointlist']).T[0],
+    #               name='datetime')
+    t, x = zip(*series['pointlist'])
+    t = pd.np.array(t) / 1000.
+    t = pd.np.array([datetime.datetime.fromtimestamp(ms) for ms in t])
+    t = pd.to_datetime(t)
+    metricname = series['display_name'].strip().strip(NAME_STRIP_CHRS).lower()
+    hostname = series['scope'].strip().strip(NAME_STRIP_CHRS)
+    hostname = hostname[4:] if hostname.startswith('host') else hostname
+    hostname = hostname.strip().strip(NAME_STRIP_CHRS)
+
+    name = ':'.join([s for s in [hostname, metricname] if len(s)])
+    name = name.replace(' ', '')
     name = name[:48]
-    ts = pd.Series(pd.np.array(series['pointlist']).T[1],
-                   index=t.values,
-                   name=name)
+
+    ts = pd.Series(x, index=t, name=name)
     return ts
 
 
-def clean_df(file_or_path=None):
+def clean_dd_df(file_or_path=None):
     """Load a DataDog json file and return a Pandas DataFrame of all the time series in the json list of dicts.
 
     Args:
@@ -160,7 +170,6 @@ def clean_df(file_or_path=None):
     Returns:
       pd.Series: Pandas Series with the timestamp as the index and a series name composed from the file path
 
-    >>> clean_df
     """
     file_or_path = file_or_path or os.path.join(DATA_PATH, 'dd', 'bing_nodes_online', 'day_1.json')
     df = pd.DataFrame()
@@ -175,7 +184,7 @@ def clean_df(file_or_path=None):
     js = js.get('series', js) if hasattr(js, 'get') else js
     js = js if isinstance(js, list) else [js]
     for series in js:
-        ts = clean_series(series)
+        ts = clean_dd_series(series)
         df[ts.name] = ts
     return df
 
@@ -184,22 +193,24 @@ def load_all(dirpath=os.path.join(DATA_PATH, 'dd')):
     files = find_files(dirpath, ext='json')
     df = pd.DataFrame()
     for f in files:
-        df = df.append(clean_df(f['path']))
+        df = df.append(clean_dd_df(f['path']))
     return df
 
 
-def clean_all(df=None, fillna_method='ffill', dropna=True, consolidate_index=False):
+def clean_dd_all(df=None, fillna_method='ffill', dropna=True, consolidate_index=False):
     """Undersample, interpolate, or impute values to fill in NaNs"""
     df = os.path.join(DATA_PATH, 'dd') if df is None else df
     df = load_all(df).astype(float) if isinstance(df, str) else pd.DataFrame(df)
 
+    df.index = pd.to_datetime(df.index.values)
     df.sort_index(inplace=True)
     df = df.reindex()
+
     if consolidate_index:
         df = df[~df.index.duplicated(keep='last')]
         df = df.reindex()
+
     df.fillna(method=fillna_method, inplace=True, axis=0)
-    # ^ this leaves a few NaNs at the beginning, start them at 0:
     if dropna is True:
         df.dropna(inplace=True)
     else:
@@ -209,7 +220,7 @@ def clean_all(df=None, fillna_method='ffill', dropna=True, consolidate_index=Fal
 
 def scale_all(df=None, fillna_method='ffill', dropna=False):
     df = os.path.join(DATA_PATH, 'dd') if df is None else df
-    df = clean_all(df, fillna_method=fillna_method, dropna=dropna).astype(float) if isinstance(df, str) else pd.DataFrame(df)
+    df = clean_dd_all(df, fillna_method=fillna_method, dropna=dropna).astype(float) if isinstance(df, str) else pd.DataFrame(df)
 
     scaler = MinMaxScaler()
     df = pd.DataFrame(scaler.fit_transform(df), index=df.index)
@@ -241,16 +252,20 @@ def is_anomalous(df, thresholds=None):
             'ex_workers.crawler_nodes.bing': 10,
             'papi.queue.web_insight': 110000.0,
             'proper.redis.requeue.standard.google': 2000.0,
-            'redis.net.clients': 10500.0,
-            'workers.us.google.status.901 + workers.us.google': 2.0
+            'proper.redis.seattle.1.ala.bs:redis.net.clients': 10500.0,
+            'workers.us.google.status.901+workers.us.google.s': 2.0
             }
 
     ans = pd.DataFrame(pd.np.zeros((len(df), len(thresholds) + 1)).astype(bool),
                        columns=[k + '__anomaly' for k in list(thresholds)] + ['any_anomaly'],
                        index=df.index)
     for dfk, ansk in zip(df.columns, ans.columns):
-        ans[ansk] = df[dfk] > thresholds[dfk]
-        ans['any_anomaly'] |= ans[ansk]
+        if dfk in thresholds:
+            ans[ansk] = df[dfk] > thresholds[dfk]
+            ans['any_anomaly'] |= ans[ansk]
+        else:
+            logger.warn('No threshold defined for {}'.format(dfk))
+            print(dfk)
     return ans
 
 
@@ -267,7 +282,7 @@ def join_spans(spans):
 
 def plot_all(df=None, fillna_method='ffill', dropna=False, filename='time-series.html'):
     df = os.path.join(DATA_PATH, 'dd') if df is None else df
-    df = clean_all(df, fillna_method=fillna_method, dropna=dropna).astype(float) if isinstance(df, str) else pd.DataFrame(df)
+    df = clean_dd_all(df, fillna_method=fillna_method, dropna=dropna).astype(float) if isinstance(df, str) else pd.DataFrame(df)
 
     anoms = is_anomalous(df)
     anom_spans = anoms['any_anomaly'].astype(int).diff().fillna(0)
@@ -305,7 +320,7 @@ def get_dd_hosts(pattern='', regex=''):
     []
     """
     global dd, api
-    dd_initialize()
+    dd, api = dd_initialize()
     hosts = api.search('hosts:{}'.format(pattern))['hosts']
     if regex:
         regex = re.compile(regex)
@@ -365,31 +380,16 @@ def timestamp(obj, allow_none=True):
     raise ValueError('Unable to coerce {} into a timestamp (datetime.timestamp() float seconds since 1970-01-01 00:00:00'.format(obj))
 
 
-def get_dd_metrics(metric_name=None, servers=None, start=None, end=None):
-    metric_name = metric_name or 'system.cpu.idle'
+def get_dd_metric(metric_name=None, servers=None, start=None, end=None):
     global dd, api
-    dd_initialize()  # noqa
+    dd, api = dd_initialize()  # noqa
     end = int(timestamp(end or time.time()))
     start = int(timestamp(start or end - 3600. * 24.))
     query = metric_name + r'{*}by{host}'  # 'system.cpu.idle{*}by{host}'
     # series = dd.api.Metric.query(start=now - 3600 * 24, end=now, query=query)
     logger.debug('start={}, end={}, query={}'.format(start, end, query))
     series = dd.api.Metric.query(start=start, end=end, query=query)
-    return clean_df(series)
-
-
-def parse_config(path='config.cfg', section='chasedown'):
-    config = configparser.RawConfigParser()
-    try:
-        config.read(path)
-        config = config._sections
-        config = config[section] if section else config
-    except IOError:
-        logger.error('Unable to load/parse .cfg file at "{}". Does it exist?'.format(
-            path))
-        config = {}
-
-    return dict2obj(config)
+    return clean_dd_df(series)
 
 
 def update_config_dict(config, args, skip_nones=True):
@@ -405,7 +405,7 @@ def update_config_dict(config, args, skip_nones=True):
     return config
 
 
-def update_config(config, args, skip_nones=True):
+def update_config(cfg, args, skip_nones=True):
     """Update configuration (from configparser) object with args object (from argparser)
 
     SEE: argparse_config package
@@ -416,6 +416,77 @@ def update_config(config, args, skip_nones=True):
     ...              ).__dict__
     {'x': 1, 'y': None, 'zz': 'She is woke!'}
     """
-    config = config if isinstance(config, Mapping) else config.__dict__
+    cfg = cfg if isinstance(cfg, Mapping) else cfg.__dict__
     args = args if isinstance(args, Mapping) else args.__dict__
-    return dict2obj(update_config_dict(config, args, skip_nones=skip_nones))
+    return dict2obj(update_config_dict(cfg, args, skip_nones=skip_nones))
+
+
+def update_db(metric_names=CFG.metrics, start=None, end=None, db=None, drop=False):
+    """Query DataDog to retrieve all the metrics for the time span indicated and save them to db.csv.gz"""
+    end = pd.to_datetime(datetime.datetime.now() if end is None else end)
+    dbpath = db
+    if not isinstance(dbpath, str):
+        dbpath = DEFAULT_DB_CSV_PATH
+        if drop:
+            db = pd.DataFrame()
+    try:
+        db = read_csv(dbpath)
+    except IOError:
+        db = pd.DataFrame()
+
+    for metric_name in metric_names:
+        if start is None:
+            if len(db) and not db.index.max().isnull():
+                db_end = pd.to_datetime(db.index.max())
+            else:
+                day_ago = pd.to_datetime(datetime.datetime.now() - datetime.timedelta(1))
+            start = pd.Series([db_end, day_ago]).min()
+        oneday = start + datetime.timedelta(1)
+        while oneday - end < datetime.timedelta(1):
+            logger.info("Querying Datadog for {} to {}".format(start, oneday))
+            df = get_dd_metric(metric_name=metric_name, start=start, end=oneday)
+            logger.info("Retrieved {} metrics".format(df.shape))
+            db = db.append(df)
+            start = oneday
+            oneday = start + datetime.timedelta(1)
+    db.sort_index(inplace=True)
+    db.reindex()
+    if isinstance(dbpath, str):
+        db.to_csv(dbpath, compression='gzip')
+        logger.info("Saved db.shape={} to {}".format(db.shape, dbpath))
+        logger.debug(db.describe())
+    return db
+
+
+def get_meta():
+    global dd, api
+    dd, api = dd_initialize()  # noqa
+    return api.search('')
+
+
+def update_meta(meta=None, drop=False):
+    """Query DataDog to retrieve all the host and metric names and save them to meta.json"""
+    empty_meta = {'hosts': [], 'metrics': []}
+    metapath = meta
+    if not isinstance(metapath, str):
+        metapath = DEFAULT_META_PATH
+        if drop:
+            meta = empty_meta
+    try:
+        with open(metapath, 'rt') as f:
+            meta = json.load(f)
+    except IOError:
+        meta = empty_meta
+    new_meta = get_meta()
+    for k in ['hosts', 'metrics']:
+        meta[k] = sorted(set(meta[k]).union(set(new_meta[k])))
+    with open(metapath, 'wt') as f:
+        json.dump(meta, f, indent=4)
+    return meta
+
+
+def retrain_model(path=DEFAULT_MODEL_PATH):
+    with open(path, 'rt') as f:
+        model = pickle.load(f)
+    with open(path, 'rt') as f:
+        pickle.dump(model, f)
