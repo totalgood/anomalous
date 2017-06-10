@@ -1,12 +1,14 @@
 """ Example pipeline for detecting anomalies using an sklearn random forest model
 """
 from anomalous.utils import *
-df = clean_all()
+from sklearn.ensemble import RandomForestClassifier 
+rf = RandomForestClassifier()
+
+df = clean_dd_all()
 X = df.values
-rf = rf.fit(X,Y)
 anoms = is_anomalous(df)
 Y = anoms.values
-rf = rf.fit(X,Y)
+rf = rf.fit(X, Y)
 rf.predict(X)
 # array([[ 1.,  0.,  0.,  0.,  0.,  1.],
 #        [ 1.,  0.,  0.,  0.,  0.,  1.],

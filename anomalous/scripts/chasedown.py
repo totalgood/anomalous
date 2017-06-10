@@ -19,9 +19,10 @@ import pandas as pd
 from nlpia.data.loaders import read_csv
 
 from anomalous import __version__
-from anomalous.constants import logging, DATA_PATH
-from anomalous.utils import stdout_logging, argparse_open_file, argparse_datetime_span, clean_df, get_dd_metrics
-from anomalous.utils import parse_config, update_config
+from anomalous.constants import logging, parse_config
+from anomalous.constants import DEFAULT_DB_CSV_FILENAME, DEFAULT_DB_DIR, DEFAULT_CONFIG_FILENAME
+from anomalous.utils import stdout_logging, argparse_open_file, argparse_datetime_span, clean_dd_df, update_db
+from anomalous.utils import update_config  # , clean_dd_all
 
 __author__ = "Hobson Lane"
 __copyright__ = "AuthorityLabs"
@@ -58,11 +59,23 @@ def parse_args(args):
         type=str,
         metavar="DIR")
     parser.add_argument(
+        '--db_cfg',
+        dest="db_cfg", required=False,
+        help="Path to a .cfg file containing the configuration for chasedown (timespands, hosts, etc).",
+        type=str,
+        metavar="CFGFILE")
+    parser.add_argument(
+        '--db_csv',
+        dest="db_csv", required=False,
+        help="Path to a .csv.gz.",
+        type=str,
+        metavar="CSVFILE")
+    parser.add_argument(
         '-t', '--timespan',
         dest="timespan", required=False,
         help="time span to query datadog for metrics and append to a local 'database' (csv) of historical data, e.g. 'past 24 hours'",
         type=lambda s: argparse_datetime_span(parser, s, allow_none=True),
-        metavar="UPDATE")
+        metavar="STR")
     parser.add_argument(
         '-s', '--servers',
         help="Servers (FQDN or hostnames) for servers with Datadog monitor metrics to retrieve.",
@@ -99,42 +112,48 @@ def main(args):
     stdout_logging(args.loglevel)
     msg = "Arguments:\n{}".format(args.__dict__)
     logger.info(msg)
-    print(msg)
-    config = parse_config(path=os.path.join(args.db or os.path.join(DATA_PATH, 'db'), 'config.cfg'))
-    config.timespan = argparse_datetime_span(None, getattr(config, 'timespan', None), allow_none=True)
-    msg = "Config:\n{}".format(config.__dict__)
+    args.db = args.db or DEFAULT_DB_DIR
+    args.db_cfg = args.db_cfg or os.path.join(args.db, DEFAULT_CONFIG_FILENAME)
+    cfg = parse_config(path=args.db_cfg, section='chasedown')
+    cfg.timespan = argparse_datetime_span(None, getattr(cfg, 'timespan', None), allow_none=True)
+    msg = "Config:\n{}".format(cfg.__dict__)
     logger.info(msg)
-    config = update_config(config, args)
-    msg = "config.update(args):\n{}".format(config.__dict__)
+    cfg = update_config(cfg, args)
+    cfg.db_csv = cfg.db_csv or os.path.join(cfg.db, DEFAULT_DB_CSV_FILENAME)
+    msg = "cfg.update(args):\n{}".format(cfg.__dict__)
     logger.info(msg)
 
     # TODO: datadog query is first priority, but can't we do both a query and a file?
-    if isinstance(config.timespan, tuple):
-        start, end = config.timespan
-    elif config.file_or_none is None:
+    if isinstance(cfg.timespan, tuple):
+        start, end = cfg.timespan
+    elif cfg.file_or_none is None:
         now = datetime.datetime.now()
         start, end = (now - datetime.timedelta(1), now)
 
-    if config.file_or_none is None:
-        df = get_dd_metrics(metric_name=config.metrics, servers=config.servers, start=start, end=end)
+    if cfg.file_or_none is None:
+        df = update_db(metric_names=cfg.metrics, start=start, end=end, db=cfg.db_csv, drop=False)
     else:
-        df = clean_df(config.file_or_none)
+        df = clean_dd_df(cfg.file_or_none)
 
-    msg = "Loaded {} series from {} with shape {}:\n{}".format(
-        len(df.columns), config.file_or_none, df.shape, df.describe())
+    msg = "Loaded {} series from {} with shape {}".format(
+        len(df.columns), cfg.file_or_none, df.shape)
     logger.info(msg)
+    logger.debug(df.describe())
 
-    config.db_csv = os.path.join(config.db, 'db.csv.gz')
-    if os.path.isfile(config.db_csv):
-        db = read_csv(os.path.join(config.db_csv, 'db.csv.gz'))
+    if os.path.isfile(cfg.db_csv):
+        db = read_csv(cfg.db_csv)
     else:
         db = pd.DataFrame()
     db = db.append(df)
-    db.to_csv(config.db_csv)
+    db.sort_index(inplace=True)
+    db = db.reindex()
+    # db = clean_all(db)
+    db.to_csv(cfg.db_csv, compression='gzip')
 
-    msg = "Saved {} series in updated db with shape {} to {}:\n{}".format(
-        len(db.columns), db.shape, config.db_csv, db.describe())
+    msg = "Saved {} series in updated db with shape {} to {}:".format(
+        len(db.columns), db.shape, cfg.db_csv)
     logger.info(msg)
+    logger.debug(db.describe())
 
 
 def run():
