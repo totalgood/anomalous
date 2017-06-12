@@ -33,7 +33,7 @@ from pugnlp.util import dict2obj
 from nlpia.data.loaders import read_csv
 
 from .constants import logging, SECRETS
-from .constants import DATA_PATH, DEFAULT_JSON_PATH, DEFAULT_DB_CSV_PATH, DEFAULT_META_PATH, DEFAULT_MODEL_PATH
+from .constants import DEFAULT_JSON_DIR, DEFAULT_JSON_PATH, DEFAULT_DB_CSV_PATH, DEFAULT_META_PATH, DEFAULT_MODEL_PATH
 from .constants import NAME_STRIP_CHRS, CFG
 
 DATADOG_OPTIONS = SECRETS.datadog.__dict__
@@ -140,28 +140,46 @@ def read_series(file_or_path=None, i=0):
     return ts
 
 
-def clean_dd_series(series):
+def normalize_metric_name(display_name, scope='*'):
+    """Combine host FQDN and metric display_name to create unique "key" for each metric"""
+    if '{' in display_name or ':' in display_name:
+        name = display_name.strip().lower()
+    else:
+        metricname = display_name.strip().strip(NAME_STRIP_CHRS).lower()
+
+        hostname = scope.strip().strip(NAME_STRIP_CHRS)
+        hostname = hostname[4:] if hostname.startswith('host') else hostname
+        hostname = hostname.strip().strip(NAME_STRIP_CHRS)
+
+        name = ':'.join([s for s in [hostname, metricname] if len(s)])
+
+    name = re.sub(r'\s', '', name)
+    name = name[:80]
+    return name
+
+
+def dd_time_to_datetime(t):
+    t = pd.np.array(t) / 1000.
+    t = pd.np.array([datetime.datetime.fromtimestamp(ms) for ms in t])
+    t = pd.to_datetime(t)
+    return t
+
+
+def clean_dd_series(series, name=None):
     """Convert a DataDog "series" dictionary to a Pandas Series"""
     # t = pd.Series(pd.np.array(series['pointlist']).T[0],
     #               name='datetime')
     t, x = zip(*series['pointlist'])
-    t = pd.np.array(t) / 1000.
-    t = pd.np.array([datetime.datetime.fromtimestamp(ms) for ms in t])
-    t = pd.to_datetime(t)
-    metricname = series['display_name'].strip().strip(NAME_STRIP_CHRS).lower()
-    hostname = series['scope'].strip().strip(NAME_STRIP_CHRS)
-    hostname = hostname[4:] if hostname.startswith('host') else hostname
-    hostname = hostname.strip().strip(NAME_STRIP_CHRS)
 
-    name = ':'.join([s for s in [hostname, metricname] if len(s)])
-    name = name.replace(' ', '')
-    name = name[:48]
+    t = dd_time_to_datetime(t)
+    if name is None:
+        name = normalize_metric_name(series['display_name'], scope=series['scope'])
 
     ts = pd.Series(x, index=t, name=name)
     return ts
 
 
-def clean_dd_df(file_or_path=None):
+def clean_dd_df(file_or_path=None, name=None):
     """Load a DataDog json file and return a Pandas DataFrame of all the time series in the json list of dicts.
 
     Args:
@@ -171,7 +189,7 @@ def clean_dd_df(file_or_path=None):
       pd.Series: Pandas Series with the timestamp as the index and a series name composed from the file path
 
     """
-    file_or_path = file_or_path or os.path.join(DATA_PATH, 'dd', 'bing_nodes_online', 'day_1.json')
+    file_or_path = file_or_path or DEFAULT_JSON_PATH
     df = pd.DataFrame()
     if isinstance(file_or_path, (list, dict)):
         js = file_or_path
@@ -184,12 +202,12 @@ def clean_dd_df(file_or_path=None):
     js = js.get('series', js) if hasattr(js, 'get') else js
     js = js if isinstance(js, list) else [js]
     for series in js:
-        ts = clean_dd_series(series)
+        ts = clean_dd_series(series, name=name)
         df[ts.name] = ts
     return df
 
 
-def load_all(dirpath=os.path.join(DATA_PATH, 'dd')):
+def load_all(dirpath=DEFAULT_JSON_DIR):
     files = find_files(dirpath, ext='json')
     df = pd.DataFrame()
     for f in files:
@@ -197,9 +215,9 @@ def load_all(dirpath=os.path.join(DATA_PATH, 'dd')):
     return df
 
 
-def clean_dd_all(df=None, fillna_method='ffill', dropna=True, consolidate_index=False):
+def clean_dd_all(df=None, fillna_method='ffill', dropna=False, consolidate_index=False):
     """Undersample, interpolate, or impute values to fill in NaNs"""
-    df = os.path.join(DATA_PATH, 'dd') if df is None else df
+    df = DEFAULT_JSON_DIR if df is None else df
     df = load_all(df).astype(float) if isinstance(df, str) else pd.DataFrame(df)
 
     df.index = pd.to_datetime(df.index.values)
@@ -219,7 +237,7 @@ def clean_dd_all(df=None, fillna_method='ffill', dropna=True, consolidate_index=
 
 
 def scale_all(df=None, fillna_method='ffill', dropna=False):
-    df = os.path.join(DATA_PATH, 'dd') if df is None else df
+    df = DEFAULT_JSON_DIR if df is None else df
     df = clean_dd_all(df, fillna_method=fillna_method, dropna=dropna).astype(float) if isinstance(df, str) else pd.DataFrame(df)
 
     scaler = MinMaxScaler()
@@ -281,7 +299,7 @@ def join_spans(spans):
 
 
 def plot_all(df=None, fillna_method='ffill', dropna=False, filename='time-series.html'):
-    df = os.path.join(DATA_PATH, 'dd') if df is None else df
+    df = DEFAULT_JSON_DIR if df is None else df
     df = clean_dd_all(df, fillna_method=fillna_method, dropna=dropna).astype(float) if isinstance(df, str) else pd.DataFrame(df)
 
     anoms = is_anomalous(df)
@@ -363,7 +381,7 @@ def timestamp(obj, allow_none=True):
     """
     if allow_none and obj is None:
         return None
-    if isinstance(obj, float):
+    if isinstance(obj, (int, float)):
         return obj
     if hasattr(obj, 'timestamp'):
         if callable(obj.timestamp):
@@ -380,16 +398,66 @@ def timestamp(obj, allow_none=True):
     raise ValueError('Unable to coerce {} into a timestamp (datetime.timestamp() float seconds since 1970-01-01 00:00:00'.format(obj))
 
 
-def get_dd_metric(metric_name=None, servers=None, start=None, end=None):
+def get_dd_metric(name=None, servers=None, start=None, end=None):
     global dd, api
     dd, api = dd_initialize()  # noqa
     end = int(timestamp(end or time.time()))
-    start = int(timestamp(start or end - 3600. * 24.))
-    query = metric_name + r'{*}by{host}'  # 'system.cpu.idle{*}by{host}'
+    start = int(timestamp(start or end - 3600 * 24))
+    query = name + r'{*}by{host}'  # 'system.cpu.idle{*}by{host}'
     # series = dd.api.Metric.query(start=now - 3600 * 24, end=now, query=query)
     logger.debug('start={}, end={}, query={}'.format(start, end, query))
     series = dd.api.Metric.query(start=start, end=end, query=query)
     return clean_dd_df(series)
+
+
+def get_dd_metrics(names=None, servers=None, start=None, end=None):
+    metric_names = CFG.metrics if names is None else sorted(names)
+    df_metrics = pd.DataFrame()
+    start0 = start
+    for i, metric_name in enumerate(metric_names):
+        print(i, metric_name)
+        start = start0
+        oneday = start + datetime.timedelta(1)
+        while oneday - end < datetime.timedelta(1):
+            logger.info("Querying Datadog for {} to {}".format(start, oneday))
+            df = get_dd_metric(metric_name, start=start, end=oneday)
+            logger.info("Retrieved {} metrics".format(df.shape))
+            df_metrics = df_metrics.append(df)
+            start = oneday
+            oneday = start + datetime.timedelta(1)
+    return df_metrics
+
+
+def get_dd_query(query, start=None, end=None):
+    global dd, api
+    dd, api = dd_initialize()  # noqa
+    end = int(timestamp(end or time.time()))
+    start = int(timestamp(start or (end - 3600 * 24)))
+    # series = dd.api.Metric.query(start=now - 3600 * 24, end=now, query=query)
+    logger.debug('start={}, end={}, query={}'.format(start, end, query))
+    series = dd.api.Metric.query(start=start, end=end, query=query)
+    return clean_dd_df(series, name=query)
+
+
+def get_dd_queries(queries=None, start=None, end=None):
+    queries = CFG.queries if queries is None else list(queries)
+    end = int(timestamp(end or time.time()))
+    start = int(timestamp(start or end - 3600 * 24))
+    dfall = pd.DataFrame()
+    start0 = start
+    for i, q in enumerate(queries):
+        query = q['query']
+        logging.info(i, query)
+        start = start0
+        oneday = start + 3600 * 24
+        while oneday - end < 3600 * 24:
+            logging.debug("Querying Datadog for {} to {}".format(start, oneday))
+            df = get_dd_query(query=query, start=start, end=oneday)
+            logging.debug("Retrieved {} monitor query values".format(df.shape))
+            dfall = dfall.append(df)
+            start = oneday
+            oneday = start + 3600 * 24
+    return dfall
 
 
 def update_config_dict(config, args, skip_nones=True):
@@ -421,38 +489,48 @@ def update_config(cfg, args, skip_nones=True):
     return dict2obj(update_config_dict(cfg, args, skip_nones=skip_nones))
 
 
-def update_db(metric_names=CFG.metrics, start=None, end=None, db=None, drop=False):
+def update_db(db=None, metric_names=CFG.metrics, start=None, end=None, drop=False):
     """Query DataDog to retrieve all the metrics for the time span indicated and save them to db.csv.gz"""
-    end = pd.to_datetime(datetime.datetime.now() if end is None else end)
     dbpath = db
     if not isinstance(dbpath, str):
         dbpath = DEFAULT_DB_CSV_PATH
-        if drop:
-            db = pd.DataFrame()
-    try:
-        db = read_csv(dbpath)
-    except IOError:
+    if drop:
         db = pd.DataFrame()
+    else:
+        try:
+            db = read_csv(dbpath)
+        except IOError:
+            db = pd.DataFrame()
 
-    for metric_name in metric_names:
-        if start is None:
-            if len(db) and not db.index.max().isnull():
-                db_end = pd.to_datetime(db.index.max())
-            else:
-                day_ago = pd.to_datetime(datetime.datetime.now() - datetime.timedelta(1))
-            start = pd.Series([db_end, day_ago]).min()
-        oneday = start + datetime.timedelta(1)
-        while oneday - end < datetime.timedelta(1):
-            logger.info("Querying Datadog for {} to {}".format(start, oneday))
-            df = get_dd_metric(metric_name=metric_name, start=start, end=oneday)
-            logger.info("Retrieved {} metrics".format(df.shape))
-            db = db.append(df)
-            start = oneday
-            oneday = start + datetime.timedelta(1)
+    end = pd.to_datetime(datetime.datetime.now() if end is None else end)
+    if start is None:
+        if len(db) and not db.index.max().isnull():
+            db_end = pd.to_datetime(db.index.max())
+        else:
+            day_ago = pd.to_datetime(datetime.datetime.now() - datetime.timedelta(1))
+        start = pd.Series([db_end, day_ago]).min()
+    start = pd.to_datetime(start)
+
+    df = get_dd_metrics(CFG.metrics, start=start, end=end)
+    if drop:
+        db = df
+    else:
+        db = db.append(df)
     db.sort_index(inplace=True)
     db.reindex()
     if isinstance(dbpath, str):
         db.to_csv(dbpath, compression='gzip')
+        print(db.columns)
+        logger.info("Saved db.shape={} to {}".format(db.shape, dbpath))
+        logger.debug(db.describe())
+
+    df = get_dd_queries(CFG.queries, start=start, end=end)
+    db = db.append(df)
+    db.sort_index(inplace=True)
+    db.reindex()
+    if isinstance(dbpath, str):
+        db.to_csv(dbpath, compression='gzip')
+        print(db.columns)
         logger.info("Saved db.shape={} to {}".format(db.shape, dbpath))
         logger.debug(db.describe())
     return db
@@ -466,7 +544,7 @@ def get_meta():
 
 def update_meta(meta=None, drop=False):
     """Query DataDog to retrieve all the host and metric names and save them to meta.json"""
-    empty_meta = {'hosts': [], 'metrics': []}
+    empty_meta = {'hosts': [], 'metrics': [], 'monitors': {}}
     metapath = meta
     if not isinstance(metapath, str):
         metapath = DEFAULT_META_PATH
@@ -478,8 +556,13 @@ def update_meta(meta=None, drop=False):
     except IOError:
         meta = empty_meta
     new_meta = get_meta()
+    monitors = dd.api.monitors.Monitor.get_all(group_states=['all'])
+    monitor_names = [monitor_dict['name'] for monitor_dict in monitors]
+    new_meta['monitors'] = dict(zip(monitor_names, monitors))
     for k in ['hosts', 'metrics']:
         meta[k] = sorted(set(meta[k]).union(set(new_meta[k])))
+    for k in ['monitors']:
+        meta[k].update(new_meta[k])
     with open(metapath, 'wt') as f:
         json.dump(meta, f, indent=4)
     return meta
