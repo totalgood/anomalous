@@ -18,7 +18,8 @@ DATA_PATH = os.path.join(os.path.dirname(__file__), 'data')
 BIGDATA_PATH = os.path.join(os.path.dirname(__file__), 'bigdata')
 
 DEFAULT_SECRETS_PATH = os.path.join(PROJECT_PATH, 'secrets.cfg')
-DEFAULT_JSON_PATH = os.path.join(DATA_PATH, 'dd', 'bing_nodes_online', 'day_1.json')
+DEFAULT_JSON_DIR = os.path.join(DATA_PATH, 'dd')
+DEFAULT_JSON_PATH = os.path.join(DEFAULT_JSON_DIR, 'bing_nodes_online', 'day_1.json')
 
 DEFAULT_DB_DIR = os.path.join(DATA_PATH, 'db')
 DEFAULT_DB_CSV_FILENAME = 'db.csv.gz'
@@ -30,7 +31,7 @@ DEFAULT_MODEL_PATH = os.path.join(DEFAULT_DB_DIR, DEFAULT_MODEL_FILENAME)
 DEFAULT_CONFIG_FILENAME = 'config.cfg'
 DEFAULT_CONFIG_PATH = os.path.join(DEFAULT_DB_DIR, DEFAULT_CONFIG_FILENAME)
 
-NAME_STRIP_CHRS = '\t\n\r :()-=+!._$%#@*[]{}'
+NAME_STRIP_CHRS = '\t\n\r :-=+!._$%#@[]'
 
 LOGGING = {
     'version': 1,
@@ -75,7 +76,7 @@ logging.config.dictConfig(LOGGING)
 logger = logging.getLogger(__name__)
 
 
-def parse_config(path=DEFAULT_CONFIG_PATH, section=None, eval_keys=['metrics']):
+def parse_config(path=DEFAULT_CONFIG_PATH, section=None, eval_keys=['metrics', 'queries']):
     configreader = configparser.RawConfigParser()
     try:
         configreader.read(path)
@@ -101,7 +102,7 @@ if os.path.isfile(DEFAULT_META_PATH):
     with open(DEFAULT_META_PATH) as f:
         META = json.load(f)
 else:
-    META = {'hosts': [], 'metrics': []}
+    META = {'hosts': [], 'metrics': [], 'monitors': {}}
 
 # str treated as *str* globstar filter
 if isinstance(CFG.metrics, str):
