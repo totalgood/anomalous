@@ -147,7 +147,7 @@ def main(args):
     db = db.append(df)
 
     db = clean_dd_all(db)
-    plot_predictions(db[datetime.datetime.now() - datetime.timedelta(1):].values)
+    plot_predictions(db.loc[datetime.datetime.now() - datetime.timedelta(1):])
 
 
 def run():
