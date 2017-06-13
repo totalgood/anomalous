@@ -328,24 +328,20 @@ def plot_predictions(df=None, fillna_method='ffill', dropna=False, filename='tim
     # df = clean_dd_all(df)
     thresholds = dict([(q['query'], q['threshold']) for q in CFG.queries if q['query'] in df.columns])
     predictions = rf.predict(df.values)
-    print(predictions)
-    print(predictions.shape)
-    print(df.shape)
     anoms = pd.DataFrame(predictions,
                          columns=list(thresholds.keys()) + ['anomaly__any'],
                          index=df.index.values)
     # FIXME: this should be an ordereddict or just a list of tuples
     # anoms = is_anomalous(df)  # manually-determined thresholds on queries from Chase
+    anoms['anomaly__any'].iloc[0] = 0
+    anoms['anomaly__any'].iloc[-1] = 0
+
     anom_spans = anoms['anomaly__any'].astype(int).diff().fillna(0)
     starts = list(df.index[anom_spans > 0])
     stops = list(df.index[anom_spans < 0])
-    print(starts)
-    print(stops)
     if len(stops) == len(starts) - 1:
         stops += [df.index.values[-1]]
-    print(starts)
-    print(stops)
-    if len(starts) > 1 and len(stops) > 1:
+    if len(starts) > 0 and len(stops) > 0:
         anom_spans = join_spans(zip(starts, stops))
     else:
         anom_spans = []
