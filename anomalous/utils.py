@@ -268,14 +268,15 @@ def is_anomalous(df, thresholds=None):
     """
 
     if thresholds is None:
-        thresholds = dict([(q['query'], q['threshold']) for q in CFG.queries if q['query'] in df.columns])
+        thresholds = [(q['query'], q['threshold']) for q in CFG.queries if q['query'] in df.columns]
+    queries, values = zip(*thresholds)
 
-    ans = pd.DataFrame(pd.np.zeros((len(df), len(thresholds) + 1)).astype(bool),
-                       columns=['anomaly__' + k for k in list(thresholds)] + ['anomaly__any'],
+    ans = pd.DataFrame(pd.np.zeros((len(df), len(queries) + 1)).astype(bool),
+                       columns=['anomaly__' + k for k in queries] + ['anomaly__any'],
                        index=df.index)
-    for dfk, ansk in zip(thresholds, ans.columns):
-        if dfk in thresholds:
-            ans[ansk] = df[dfk] > thresholds[dfk]
+    for dfk, ansk, value in zip(queries, ans.columns, values):
+        if dfk in queries:
+            ans[ansk] = df[dfk] > value
             ans['anomaly__any'] |= ans[ansk]
         else:
             logger.error('No threshold defined for {}'.format(dfk))
@@ -326,10 +327,10 @@ def plot_predictions(df=None, fillna_method='ffill', dropna=False, filename='tim
 
     rf = pickle.load(open(DEFAULT_MODEL_PATH, 'rb'))
     # df = clean_dd_all(df)
-    thresholds = dict([(q['query'], q['threshold']) for q in CFG.queries if q['query'] in df.columns])
+    thresholds = [(q['query'], q['threshold']) for q in CFG.queries if q['query'] in df.columns]
     predictions = rf.predict(df.values)
     anoms = pd.DataFrame(predictions,
-                         columns=list(thresholds.keys()) + ['anomaly__any'],
+                         columns=[q['query'] for q in CFG.queries if q['query'] in df.columns] + ['anomaly__any'],
                          index=df.index.values)
     # FIXME: this should be an ordereddict or just a list of tuples
     # anoms = is_anomalous(df)  # manually-determined thresholds on queries from Chase
