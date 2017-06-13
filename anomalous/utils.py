@@ -27,6 +27,7 @@ from plotly import offline
 import cufflinks  # noqa
 import datadog as dd  # noqa
 from dogapi.http import DogHttpApi
+from tqdm import tqdm
 
 from pugnlp.futil import find_files, read_json
 from pugnlp.util import dict2obj
@@ -222,6 +223,7 @@ def clean_dd_all(df=None, fillna_method='ffill', dropna=False, consolidate_index
 
     df.index = pd.to_datetime(df.index.values)
     df.sort_index(inplace=True)
+    df.groupby(df.index).mean()
     df = df.reindex()
 
     if consolidate_index:
@@ -266,24 +268,17 @@ def is_anomalous(df, thresholds=None):
     """
 
     if thresholds is None:
-        thresholds = {
-            'ex_workers.crawler_nodes.bing': 10,
-            'papi.queue.web_insight': 110000.0,
-            'proper.redis.requeue.standard.google': 2000.0,
-            'proper.redis.seattle.1.ala.bs:redis.net.clients': 10500.0,
-            'workers.us.google.status.901+workers.us.google.s': 2.0
-            }
+        thresholds = dict([(q['query'], q['threshold']) for q in CFG.queries if q['query'] in df.columns])
 
     ans = pd.DataFrame(pd.np.zeros((len(df), len(thresholds) + 1)).astype(bool),
-                       columns=[k + '__anomaly' for k in list(thresholds)] + ['any_anomaly'],
+                       columns=['anomaly__' + k for k in list(thresholds)] + ['anomaly__any'],
                        index=df.index)
-    for dfk, ansk in zip(df.columns, ans.columns):
+    for dfk, ansk in zip(thresholds, ans.columns):
         if dfk in thresholds:
             ans[ansk] = df[dfk] > thresholds[dfk]
-            ans['any_anomaly'] |= ans[ansk]
+            ans['anomaly__any'] |= ans[ansk]
         else:
-            logger.warn('No threshold defined for {}'.format(dfk))
-            print(dfk)
+            logger.error('No threshold defined for {}'.format(dfk))
     return ans
 
 
@@ -303,7 +298,7 @@ def plot_all(df=None, fillna_method='ffill', dropna=False, filename='time-series
     df = clean_dd_all(df, fillna_method=fillna_method, dropna=dropna).astype(float) if isinstance(df, str) else pd.DataFrame(df)
 
     anoms = is_anomalous(df)
-    anom_spans = anoms['any_anomaly'].astype(int).diff().fillna(0)
+    anom_spans = anoms['anomaly__any'].astype(int).diff().fillna(0)
     starts = list(df.index[anom_spans > 0])
     stops = list(df.index[anom_spans < 0])
     if len(stops) == len(starts) - 1:
@@ -312,6 +307,53 @@ def plot_all(df=None, fillna_method='ffill', dropna=False, filename='time-series
 
     print(anom_spans)
 
+    df['Num. Anomalous Monitors'] = (anoms[anoms.columns[:-1]].sum(axis=1) + .01)
+    offline.plot(df.iplot(
+        asFigure=True, xTitle='Date-Time', yTitle='Monitor Value', kind='scatter', logy=True,
+        vspan=anom_spans),
+        filename=filename,
+        )
+    return df
+
+
+def plot_predictions(df=None, fillna_method='ffill', dropna=False, filename='time-series.html'):
+    """Plot predicted anomalies and queries that likely triggered them in an HTML file and print the anomalous time spans
+
+    >>> plot_predictions(df=db[datetime.datetime.now() - datetime.timedelta(1):])
+    """
+    df = DEFAULT_JSON_DIR if df is None else df
+    df = clean_dd_all(df, fillna_method=fillna_method, dropna=dropna).astype(float) if isinstance(df, str) else pd.DataFrame(df)
+
+    rf = pickle.load(open(DEFAULT_MODEL_PATH, 'rb'))
+    # df = clean_dd_all(df)
+    thresholds = dict([(q['query'], q['threshold']) for q in CFG.queries if q['query'] in df.columns])
+    predictions = rf.predict(df.values)
+    print(predictions)
+    print(predictions.shape)
+    print(df.shape)
+    anoms = pd.DataFrame(predictions,
+                         columns=list(thresholds.keys()) + ['anomaly__any'],
+                         index=df.index.values)
+    # FIXME: this should be an ordereddict or just a list of tuples
+    # anoms = is_anomalous(df)  # manually-determined thresholds on queries from Chase
+    anom_spans = anoms['anomaly__any'].astype(int).diff().fillna(0)
+    starts = list(df.index[anom_spans > 0])
+    stops = list(df.index[anom_spans < 0])
+    print(starts)
+    print(stops)
+    if len(stops) == len(starts) - 1:
+        stops += [df.index.values[-1]]
+    print(starts)
+    print(stops)
+    if len(starts) > 1 and len(stops) > 1:
+        anom_spans = join_spans(zip(starts, stops))
+    else:
+        anom_spans = []
+
+    print('Anomalous Time Spans:')
+    print(anom_spans)
+
+    df = df[list(thresholds.keys())]
     df['Num. Anomalous Monitors'] = (anoms[anoms.columns[:-1]].sum(axis=1) + .01)
     offline.plot(df.iplot(
         asFigure=True, xTitle='Date-Time', yTitle='Monitor Value', kind='scatter', logy=True,
@@ -414,14 +456,15 @@ def get_dd_metrics(names=None, servers=None, start=None, end=None):
     metric_names = CFG.metrics if names is None else sorted(names)
     df_metrics = pd.DataFrame()
     start0 = start
-    for i, metric_name in enumerate(metric_names):
-        print(i, metric_name)
+    for i, metric_name in enumerate(tqdm(metric_names)):
+        logger.info('Requesting metric {}/{} {} for {} to {}'.format(
+            i, len(metric_names), metric_name, start0, end))
         start = start0
         oneday = start + datetime.timedelta(1)
         while oneday - end < datetime.timedelta(1):
-            logger.info("Querying Datadog for {} to {}".format(start, oneday))
+            logger.debug("Querying Datadog for {} to {}".format(start, oneday))
             df = get_dd_metric(metric_name, start=start, end=oneday)
-            logger.info("Retrieved {} metrics".format(df.shape))
+            logger.debug("Retrieved {} metrics".format(df.shape))
             df_metrics = df_metrics.append(df)
             start = oneday
             oneday = start + datetime.timedelta(1)
@@ -445,9 +488,10 @@ def get_dd_queries(queries=None, start=None, end=None):
     start = int(timestamp(start or end - 3600 * 24))
     dfall = pd.DataFrame()
     start0 = start
-    for i, q in enumerate(queries):
+    for i, q in enumerate(tqdm(queries)):
         query = q['query']
-        logging.info(i, query)
+        logger.info('Requesting query {}/{} {} for {} to {}'.format(
+            i + 1, len(queries), query, start, end))
         start = start0
         oneday = start + 3600 * 24
         while oneday - end < 3600 * 24:
@@ -489,7 +533,7 @@ def update_config(cfg, args, skip_nones=True):
     return dict2obj(update_config_dict(cfg, args, skip_nones=skip_nones))
 
 
-def update_db(db=None, metric_names=CFG.metrics, start=None, end=None, drop=False):
+def update_db(db=None, metric_names=CFG.metrics, start=None, end=None, drop=False, save=True):
     """Query DataDog to retrieve all the metrics for the time span indicated and save them to db.csv.gz"""
     dbpath = db
     if not isinstance(dbpath, str):
@@ -517,8 +561,11 @@ def update_db(db=None, metric_names=CFG.metrics, start=None, end=None, drop=Fals
     else:
         db = db.append(df)
     db.sort_index(inplace=True)
-    db.reindex()
-    if isinstance(dbpath, str):
+    db = db.reindex()
+    db = db.groupby([db.index]).mean()
+    db.sort_index(inplace=True)
+    db = db.reindex()
+    if isinstance(dbpath, str) and save:
         db.to_csv(dbpath, compression='gzip')
         print(db.columns)
         logger.info("Saved db.shape={} to {}".format(db.shape, dbpath))
@@ -529,8 +576,10 @@ def update_db(db=None, metric_names=CFG.metrics, start=None, end=None, drop=Fals
     db.sort_index(inplace=True)
     db.reindex()
     if isinstance(dbpath, str):
+        logger.info('Saving appended database of historical metrics (shaped {}) to a single CSV file, so this may take a while (minutes)...'.format(
+            df.shape))
         db.to_csv(dbpath, compression='gzip')
-        print(db.columns)
+        logger.info(db.columns)
         logger.info("Saved db.shape={} to {}".format(db.shape, dbpath))
         logger.debug(db.describe())
     return db

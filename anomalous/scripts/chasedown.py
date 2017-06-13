@@ -22,7 +22,7 @@ from anomalous import __version__
 from anomalous.constants import logging, parse_config
 from anomalous.constants import DEFAULT_DB_CSV_FILENAME, DEFAULT_DB_DIR, DEFAULT_CONFIG_FILENAME
 from anomalous.utils import stdout_logging, argparse_open_file, argparse_datetime_span, clean_dd_df, update_db
-from anomalous.utils import update_config  # , clean_dd_all
+from anomalous.utils import plot_predictions, update_config, clean_dd_all
 
 __author__ = "Hobson Lane"
 __copyright__ = "AuthorityLabs"
@@ -131,11 +131,11 @@ def main(args):
         start, end = (now - datetime.timedelta(1), now)
 
     if cfg.file_or_none is None:
-        df = update_db(metric_names=cfg.metrics, start=start, end=end, db=cfg.db_csv, drop=False)
+        df = update_db(metric_names=cfg.metrics, start=start, end=end, db=cfg.db_csv, drop=False, save=False)
     else:
         df = clean_dd_df(cfg.file_or_none)
 
-    msg = "Loaded {} series from {} with shape {}".format(
+    msg = "(Down)loaded {} series from {} with shape {}".format(
         len(df.columns), cfg.file_or_none, df.shape)
     logger.info(msg)
     logger.debug(df.describe())
@@ -145,15 +145,9 @@ def main(args):
     else:
         db = pd.DataFrame()
     db = db.append(df)
-    db.sort_index(inplace=True)
-    db = db.reindex()
-    # db = clean_all(db)
-    db.to_csv(cfg.db_csv, compression='gzip')
 
-    msg = "Saved {} series in updated db with shape {} to {}:".format(
-        len(db.columns), db.shape, cfg.db_csv)
-    logger.info(msg)
-    logger.debug(db.describe())
+    db = clean_dd_all(db)
+    plot_predictions(db[datetime.datetime.now() - datetime.timedelta(1):].values)
 
 
 def run():

@@ -1,15 +1,60 @@
 """ Example pipeline for detecting anomalies using an sklearn random forest model
 """
 from anomalous.utils import *
-from sklearn.ensemble import RandomForestClassifier 
-rf = RandomForestClassifier()
+from sklearn.ensemble import RandomForestClassifier
 
-df = clean_dd_all()
+df = read_csv(DEFAULT_DB_CSV_PATH)
+df = clean_dd_all(df)
 X = df.values
 anoms = is_anomalous(df)
 Y = anoms.values
+
+rf = RandomForestClassifier(max_depth=10, class_weight='balanced', n_estimators=50, n_jobs=-1)
+Y = anoms.values
 rf = rf.fit(X, Y)
 rf.predict(X)
+# array([[ 0.,  0.,  0.,  0.,  0.,  0.],
+#        [ 0.,  0.,  0.,  0.,  0.,  0.],
+#        [ 0.,  0.,  0.,  0.,  0.,  0.],
+#        ..., 
+#        [ 0.,  0.,  1.,  1.,  0.,  1.],
+#        [ 0.,  0.,  1.,  1.,  0.,  1.],
+#        [ 0.,  0.,  1.,  1.,  0.,  1.]])
+Y_pred = _
+# correlation for deep and wide random forest
+pd.np.diag((Y_pred.T.dot(Y) / Y_pred.T.dot(Y_pred) / Y.T.dot(Y)).round(3))
+# array([ 0.891,  0.998,  1.   ,  1.   ,  0.996,  1.   ])
+
+
+
+# these are realistic results with default rf args and using all the 551 features (needle in haystack):
+rf = RandomForestClassifier()
+rf = rf.fit(X, Y)
+rf.predict(X)
+# array([[ 0.,  0.,  0.,  0.,  0.,  0.],
+#        [ 0.,  0.,  0.,  0.,  0.,  0.],
+#        [ 0.,  0.,  0.,  0.,  0.,  0.],
+#        ..., 
+#        [ 0.,  0.,  1.,  1.,  0.,  1.],
+#        [ 0.,  0.,  1.,  1.,  0.,  1.],
+#        [ 0.,  0.,  1.,  1.,  0.,  1.]])
+((rf.predict(X) - Y) ** 2).sum() ** .5
+# 1.7320508075688772
+((rf.predict(X)[:,-1] - Y[:,-1]) ** 2).sum() ** .5
+# 0.0
+((rf.predict(X)[:,0] - Y[:,0]) ** 2).sum() ** .5
+# 1.0
+((rf.predict(X)[:,1] - Y[:,1]) ** 2).sum() ** .5
+# 1.4142135623730951
+((rf.predict(X)[:,2] - Y[:,2]) ** 2).sum() ** .5
+# 0.0
+((rf.predict(X)[:,3] - Y[:,3]) ** 2).sum() ** .5
+# 0.0
+((rf.predict(X)[:,4] - Y[:,4]) ** 2).sum() ** .5
+# 0.0
+
+
+# these are the perfect results when the only features in X are the features that were thresholded to produce Y:
 # array([[ 1.,  0.,  0.,  0.,  0.,  1.],
 #        [ 1.,  0.,  0.,  0.,  0.,  1.],
 #        [ 1.,  0.,  0.,  0.,  0.,  1.],
@@ -17,6 +62,8 @@ rf.predict(X)
 #        [ 0.,  0.,  0.,  1.,  0.,  1.],
 #        [ 0.,  0.,  0.,  1.,  0.,  1.],
 #        [ 0.,  0.,  0.,  1.,  0.,  1.]])
+
+
 
 err = rf.predict(X) - Y
 err = pd.DataFrame(rf.predict(X), columns=anoms.columns, index=anoms.index) - pd.DataFrame(Y, columns=anoms.columns, index=anoms.index)
