@@ -30,6 +30,8 @@ DEFAULT_META_FILENAME = 'meta.json'
 DEFAULT_META_PATH = os.path.join(DEFAULT_DB_DIR, DEFAULT_META_FILENAME)
 DEFAULT_MODEL_FILENAME = 'model.pkl'
 DEFAULT_MODEL_PATH = os.path.join(DEFAULT_DB_DIR, DEFAULT_MODEL_FILENAME)
+DEFAULT_HUMAN_FILENAME = 'human-labeled-time-spans.csv'
+DEFAULT_HUMAN_PATH = os.path.join(DEFAULT_DB_DIR, DEFAULT_HUMAN_FILENAME)  # start, end, 0/1 (1=anomalous)
 DEFAULT_CONFIG_FILENAME = 'config.cfg'
 DEFAULT_CONFIG_PATH = os.path.join(DEFAULT_DB_DIR, DEFAULT_CONFIG_FILENAME)
 
@@ -79,6 +81,12 @@ logger = logging.getLogger(__name__)
 
 
 def parse_config(path=DEFAULT_CONFIG_PATH, section=None, eval_keys=['metrics', 'queries']):
+    """ Pares a cfg file, retrieving the requested section as a dictionary
+
+    Args:
+        section (str): name of the section you'd like to extract
+        eval_keys (list of str): Parser will try to evaluate strings in the config variables for the indicated eval_keys
+    """
     configreader = configparser.RawConfigParser()
     try:
         configreader.read(path)
