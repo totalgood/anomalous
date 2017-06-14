@@ -34,7 +34,7 @@ from pugnlp.util import dict2obj
 from nlpia.data.loaders import read_csv
 
 from .constants import logging, SECRETS
-from .constants import DEFAULT_JSON_DIR, DEFAULT_JSON_PATH, DEFAULT_DB_CSV_PATH, DEFAULT_META_PATH, DEFAULT_MODEL_PATH
+from .constants import DEFAULT_JSON_DIR, DEFAULT_JSON_PATH, DEFAULT_DB_CSV_PATH, DEFAULT_META_PATH, DEFAULT_MODEL_PATH, DEFAULT_HUMAN_PATH
 from .constants import NAME_STRIP_CHRS, CFG
 
 DATADOG_OPTIONS = SECRETS.datadog.__dict__
@@ -141,7 +141,7 @@ def read_series(file_or_path=None, i=0):
     return ts
 
 
-def normalize_metric_name(display_name, scope='*'):
+def normalize_metric_name(display_name, scope='*', max_len=80):
     """Combine host FQDN and metric display_name to create unique "key" for each metric"""
     if '{' in display_name or ':' in display_name:
         name = display_name.strip().lower()
@@ -155,7 +155,7 @@ def normalize_metric_name(display_name, scope='*'):
         name = ':'.join([s for s in [hostname, metricname] if len(s)])
 
     name = re.sub(r'\s', '', name)
-    name = name[:80]
+    name = name[:max_len]
     return name
 
 
@@ -294,6 +294,26 @@ def join_spans(spans):
     return joined_spans
 
 
+def ask_if_anomalous(new_spans, human_labels_path=DEFAULT_HUMAN_PATH):
+    """Console input by user to confirm or deny anomalous timespans"""
+    df = read_csv(human_labels_path) or pd.DataFrame(columns='start end human_label'.split())
+    columns = df.columns
+    print('Anomalous Time Spans Detected in Past 24 hours:')
+    print(pd.DataFrame(new_spans, columns=columns[:2]))
+    print('Refer to the time-series.html plot for this time period to determine whether these time spans were truly anomalous.')
+    human_labels = pd.np.zeros(len(new_spans), dtype=int)
+    for i, (start, end) in enumerate(new_spans):
+        print("{}: {} to {}".format(i, start, end))
+        ans = input("Is the time span above anomalous (Y/N)?")
+        if re.match(r'y|Y|Yes|YES|yes|yep|yup', ans):
+            human_labels[i] = 1
+    dfnew = pd.DataFrame(new_spans, columns=df.columns[:2])
+    dfnew[df.columns[-1]] = human_labels
+    df = df.append(dfnew, ignore_index=True)
+    df.to_csv(human_labels_path)
+    return df
+
+
 def plot_all(df=None, fillna_method='ffill', dropna=False, filename='time-series.html'):
     df = DEFAULT_JSON_DIR if df is None else df
     df = clean_dd_all(df, fillna_method=fillna_method, dropna=dropna).astype(float) if isinstance(df, str) else pd.DataFrame(df)
@@ -327,12 +347,11 @@ def plot_predictions(df=None, fillna_method='ffill', dropna=False, filename='tim
 
     rf = pickle.load(open(DEFAULT_MODEL_PATH, 'rb'))
     # df = clean_dd_all(df)
-    thresholds = [(q['query'], q['threshold']) for q in CFG.queries if q['query'] in df.columns]
+    # thresholds = [(q['query'], q['threshold']) for q in CFG.queries if q['query'] in df.columns]
     predictions = rf.predict(df.values)
     anoms = pd.DataFrame(predictions,
                          columns=[q['query'] for q in CFG.queries if q['query'] in df.columns] + ['anomaly__any'],
                          index=df.index.values)
-    # FIXME: this should be an ordereddict or just a list of tuples
     # anoms = is_anomalous(df)  # manually-determined thresholds on queries from Chase
     anoms['anomaly__any'].iloc[0] = 0
     anoms['anomaly__any'].iloc[-1] = 0
@@ -347,16 +366,16 @@ def plot_predictions(df=None, fillna_method='ffill', dropna=False, filename='tim
     else:
         anom_spans = []
 
-    print('Anomalous Time Spans:')
-    print(anom_spans)
-
     df = df[[c for c in anoms.columns if c in df.columns]]
     df['Num. Anomalous Monitors'] = (anoms[anoms.columns[:-1]].sum(axis=1) + .01)
+    df.columns = [normalize_metric_name(c, max_len=64) for c in df.columns]
     offline.plot(df.iplot(
         asFigure=True, xTitle='Date-Time', yTitle='Monitor Value', kind='scatter', logy=True,
         vspan=anom_spans),
         filename=filename,
         )
+
+    ask_if_anomalous(anom_spans)
     return df
 
 

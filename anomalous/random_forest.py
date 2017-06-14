@@ -14,16 +14,16 @@ Y = anoms.values
 rf = rf.fit(X, Y)
 Y_pred = rf.predict(X)
 Y_pred
-# array([[ 0.,  0.,  0.,  0.,  0.,  0.],
-#        [ 0.,  0.,  0.,  0.,  0.,  0.],
-#        [ 0.,  0.,  0.,  0.,  0.,  0.],
+# array([[ 0.,  0.,  0.,  0.,  0.,  1.],
+#        [ 0.,  0.,  0.,  0.,  0.,  1.],
+#        [ 0.,  0.,  0.,  0.,  0.,  1.],
 #        ..., 
 #        [ 0.,  0.,  1.,  1.,  0.,  1.],
 #        [ 0.,  0.,  1.,  1.,  0.,  1.],
 #        [ 0.,  0.,  1.,  1.,  0.,  1.]])
 # correlation for deep and wide random forest
 pd.np.diag((Y_pred.T.dot(Y) / Y_pred.T.dot(Y_pred) / Y.T.dot(Y)).round(3))
-# array([ 0.891,  0.998,  1.   ,  1.   ,  0.996,  1.   ])
+#  array([ 1.   ,  1.   ,  1.   ,  1.   ,  0.996,  1.   ])
 
 
 
