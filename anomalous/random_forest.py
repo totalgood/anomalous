@@ -9,10 +9,11 @@ X = df.values
 anoms = is_anomalous(df)
 Y = anoms.values
 
-rf = RandomForestClassifier(max_depth=10, class_weight='balanced', n_estimators=50, n_jobs=-1)
+rf = RandomForestClassifier(max_depth=10, class_weight='balanced', n_estimators=100, n_jobs=-1)
 Y = anoms.values
 rf = rf.fit(X, Y)
-rf.predict(X)
+Y_pred = rf.predict(X)
+Y_pred
 # array([[ 0.,  0.,  0.,  0.,  0.,  0.],
 #        [ 0.,  0.,  0.,  0.,  0.,  0.],
 #        [ 0.,  0.,  0.,  0.,  0.,  0.],
@@ -20,7 +21,6 @@ rf.predict(X)
 #        [ 0.,  0.,  1.,  1.,  0.,  1.],
 #        [ 0.,  0.,  1.,  1.,  0.,  1.],
 #        [ 0.,  0.,  1.,  1.,  0.,  1.]])
-Y_pred = _
 # correlation for deep and wide random forest
 pd.np.diag((Y_pred.T.dot(Y) / Y_pred.T.dot(Y_pred) / Y.T.dot(Y)).round(3))
 # array([ 0.891,  0.998,  1.   ,  1.   ,  0.996,  1.   ])

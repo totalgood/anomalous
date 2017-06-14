@@ -350,7 +350,7 @@ def plot_predictions(df=None, fillna_method='ffill', dropna=False, filename='tim
     print('Anomalous Time Spans:')
     print(anom_spans)
 
-    df = df[list(thresholds.keys())]
+    df = df[[c for c in anoms.columns if c in df.columns]]
     df['Num. Anomalous Monitors'] = (anoms[anoms.columns[:-1]].sum(axis=1) + .01)
     offline.plot(df.iplot(
         asFigure=True, xTitle='Date-Time', yTitle='Monitor Value', kind='scatter', logy=True,
