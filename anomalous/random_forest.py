@@ -24,6 +24,8 @@ Y_pred
 # correlation for deep and wide random forest
 pd.np.diag((Y_pred.T.dot(Y) / Y_pred.T.dot(Y_pred) / Y.T.dot(Y)).round(3))
 #  array([ 1.   ,  1.   ,  1.   ,  1.   ,  0.996,  1.   ])
+pickle.dump(rf, open(DEFAULT_MODEL_PATH, 'wb'))
+
 
 
 

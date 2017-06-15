@@ -8,9 +8,20 @@ import logging
 import logging.config
 import os
 import json
+import platform
+from traceback import print_exc
 
 from pugnlp.util import dict2obj
 
+
+if platform.mac_ver()[0]:
+    PLATFORM = 'OSX'
+elif platform.win32_ver()[0]:
+    PLATFORM = 'Win32'
+elif platform.dist()[0]:
+    PLATFORM = 'Linux'
+else:
+    PLATFORM = platform.system()  # 'Linux', 'Windows', 'Java', 'OS2', 'Darwin'
 
 USER_HOME = os.path.expanduser("~")
 PROJECT_PATH = os.path.dirname(os.path.dirname(__file__))
@@ -35,6 +46,19 @@ DEFAULT_HUMAN_PATH = os.path.join(DEFAULT_DB_DIR, DEFAULT_HUMAN_FILENAME)  # sta
 DEFAULT_CONFIG_FILENAME = 'config.cfg'
 DEFAULT_CONFIG_PATH = os.path.join(DEFAULT_DB_DIR, DEFAULT_CONFIG_FILENAME)
 
+OSX_LOG_ADDRESS, OSX_LOG_FACILITY = os.path.join('/', 'var', 'run', 'syslog'), 'local7'
+LINUX_LOG_ADDRESS, LINUX_LOG_FACILITY = os.path.join('/', 'dev', 'log'), 'local7'
+LOCALHOST_LOG_ADDRESS, LOCALHOST_LOG_FACILITY = ('localhost', 514), 19
+
+LOG_FACILITY = LINUX_LOG_FACILITY
+if os.path.exists(OSX_LOG_ADDRESS):
+    LOG_ADDRESS = OSX_LOG_ADDRESS
+elif os.path.exists(LINUX_LOG_ADDRESS):
+    LOG_ADDRESS = LINUX_LOG_ADDRESS
+else:
+    LOG_ADDRESS = LOCALHOST_LOG_ADDRESS
+    LOG_FACILITY = LOCALHOST_LOG_FACILITY
+
 NAME_STRIP_CHRS = '\t\n\r :-=+!._$%#@[]'
 
 LOGGING = {
@@ -54,9 +78,9 @@ LOGGING = {
         'logging.handlers.SysLogHandler': {
             'level': 'DEBUG',
             'class': 'logging.handlers.SysLogHandler',
-            'facility': 'local7',
             'formatter': 'django',
-            'address': '/dev/log',
+            'facility': LOG_FACILITY,
+            'address': LOG_ADDRESS,
         },
         u'console': {
             u'class': u'logging.StreamHandler',
@@ -76,8 +100,22 @@ LOGGING = {
     },
 }
 
-logging.config.dictConfig(LOGGING)
-logger = logging.getLogger(__name__)
+try:
+    logging.config.dictConfig(LOGGING)
+    logger = logging.getLogger(__name__)
+except:
+    print_exc()
+    LOGGING['handlers']['logging.handlers.SysLogHandler']['address'] = LOCALHOST_LOG_ADDRESS
+    LOGGING['handlers']['logging.handlers.SysLogHandler']['facility'] = 19
+    try:
+        logging.config.dictConfig(LOGGING)
+        logger = logging.getLogger(__name__)
+    except:
+        print_exc()
+        del LOGGING['handlers']['logging.handlers.SysLogHandler']
+        LOGGING['loggers']['loggly']['handlers'] = [u'console'],
+        logging.config.dictConfig(LOGGING)
+        logger = logging.getLogger(__name__)
 
 
 def parse_config(path=DEFAULT_CONFIG_PATH, section=None, eval_keys=['metrics', 'queries']):
