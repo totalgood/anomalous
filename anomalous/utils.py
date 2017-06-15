@@ -276,7 +276,7 @@ def is_anomalous(df, thresholds=None):
                        index=df.index)
     for dfk, ansk, value, polarity in zip(queries, ans.columns, values, polarities):
         if dfk in queries:
-            ans[ansk] = (polarity * df[dfk]) > (polarity * value)
+            ans[ansk] = (df[dfk] > value) if polarity > 0 else (df[dfk] < value)
             ans['anomaly__any'] |= ans[ansk]
         else:
             logger.error('No threshold defined for {}'.format(dfk))
@@ -380,6 +380,7 @@ def plot_predictions(df=None, fillna_method='ffill', dropna=False, filename='tim
         )
 
     ask_if_anomalous(anom_spans)
+
     return df
 
 
