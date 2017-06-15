@@ -269,15 +269,20 @@ def is_anomalous(df, thresholds=None):
     """
 
     if thresholds is None:
-        thresholds = [(q['query'], q['threshold'], int(q['threshold_polarity'])) for q in CFG.queries if q['query'] in df.columns]
-    queries, values, polarities = zip(*thresholds)
+        thresholds = [(q['query'], q['threshold']) for q in CFG.queries if q['query'] in df.columns]
+    queries, values = zip(*thresholds)
+    lows, highs = zip(*values)
 
     ans = pd.DataFrame(pd.np.zeros((len(df), len(queries) + 1)).astype(bool),
-                       columns=['anomaly__' + k for k in queries] + ['anomaly__any'],
+                       columns=['anomaly__<{}&>{}__{}'.format(low, high, query) for query, low, high in zip(queries, lows, highs)] + ['anomaly__any'],
                        index=df.index)
-    for dfk, ansk, value, polarity in zip(queries, ans.columns, values, polarities):
+    for dfk, ansk, (low, high) in zip(queries, ans.columns, values):
+        high = np.nan if high is None else high
+        low = np.nan if low is None else low
+        high = float(high) if isinstance(high, str) else high
+        low = float(low) if isinstance(low, str) else low
         if dfk in queries:
-            ans[ansk] = (df[dfk] > value) if polarity > 0 else (df[dfk] < value)
+            ans[ansk] = (df[dfk] > high) and (df[dfk] < low)
             ans['anomaly__any'] |= ans[ansk]
         else:
             logger.error('No threshold defined for {}'.format(dfk))
@@ -624,19 +629,20 @@ def update_meta(meta=None, drop=False):
     """Query DataDog to retrieve all the host and metric names and save them to meta.json"""
     empty_meta = {'hosts': [], 'metrics': [], 'monitors': {}}
     metapath = meta
+    meta = empty_meta
     if not isinstance(metapath, str):
         metapath = DEFAULT_META_PATH
-        if drop:
-            meta = empty_meta
-    try:
-        with open(metapath, 'rt') as f:
-            meta = json.load(f)
-    except IOError:
-        meta = empty_meta
+    if not drop:
+        try:
+            with open(metapath, 'rt') as f:
+                meta.update(json.load(f))
+        except IOError:
+            pass
     new_meta = get_meta()
     monitors = dd.api.monitors.Monitor.get_all(group_states=['all'])
     monitor_names = [monitor_dict['name'] for monitor_dict in monitors]
-    new_meta['monitors'] = dict(zip(monitor_names, monitors))
+    monitor_queries = [monitor_dict['query'] for monitor_dict in monitors]
+    new_meta['monitors'] = dict(zip(monitor_names, monitor_queries))
     for k in ['hosts', 'metrics']:
         meta[k] = sorted(set(meta[k]).union(set(new_meta[k])))
     for k in ['monitors']:
