@@ -45,5 +45,9 @@ MANIFEST
 anomalous/data/dd/*
 
 # Secrets
+anomalous/data/db/*
+*.cfg
+!setup.cfg
+!anomalous/data/db/config.cfg.EXAMPLE_TEMPLATE
 secret*
 !secrets.cfg.EXAMPLE_TEMPLATE
