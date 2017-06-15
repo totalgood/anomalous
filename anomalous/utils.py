@@ -268,15 +268,15 @@ def is_anomalous(df, thresholds=None):
     """
 
     if thresholds is None:
-        thresholds = [(q['query'], q['threshold']) for q in CFG.queries if q['query'] in df.columns]
-    queries, values = zip(*thresholds)
+        thresholds = [(q['query'], q['threshold'], int(q['threshold_polarity'])) for q in CFG.queries if q['query'] in df.columns]
+    queries, values, polarities = zip(*thresholds)
 
     ans = pd.DataFrame(pd.np.zeros((len(df), len(queries) + 1)).astype(bool),
                        columns=['anomaly__' + k for k in queries] + ['anomaly__any'],
                        index=df.index)
-    for dfk, ansk, value in zip(queries, ans.columns, values):
+    for dfk, ansk, value, polarity in zip(queries, ans.columns, values, polarities):
         if dfk in queries:
-            ans[ansk] = df[dfk] > value
+            ans[ansk] = (polarity * df[dfk]) > (polarity * value)
             ans['anomaly__any'] |= ans[ansk]
         else:
             logger.error('No threshold defined for {}'.format(dfk))
@@ -296,7 +296,11 @@ def join_spans(spans):
 
 def ask_if_anomalous(new_spans, human_labels_path=DEFAULT_HUMAN_PATH):
     """Console input by user to confirm or deny anomalous timespans"""
-    df = read_csv(human_labels_path) or pd.DataFrame(columns='start end human_label'.split())
+    try:
+        df = read_csv(human_labels_path)
+    except IOError:
+        df = pd.DataFrame(columns='start end human_label'.split())
+
     columns = df.columns
     print('Anomalous Time Spans Detected in Past 24 hours:')
     print(pd.DataFrame(new_spans, columns=columns[:2]))
@@ -304,7 +308,7 @@ def ask_if_anomalous(new_spans, human_labels_path=DEFAULT_HUMAN_PATH):
     human_labels = pd.np.zeros(len(new_spans), dtype=int)
     for i, (start, end) in enumerate(new_spans):
         print("{}: {} to {}".format(i, start, end))
-        ans = input("Is the time span above anomalous (Y/N)?")
+        ans = input("Is the time span above anomalous (Y/N)? ")
         if re.match(r'y|Y|Yes|YES|yes|yep|yup', ans):
             human_labels[i] = 1
     dfnew = pd.DataFrame(new_spans, columns=df.columns[:2])
