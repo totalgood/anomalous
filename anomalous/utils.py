@@ -20,6 +20,7 @@ import pickle
 from collections import Mapping
 
 import pandas as pd
+from pandas import np
 import dateutil
 import timestring
 from sklearn.preprocessing import MinMaxScaler
@@ -308,9 +309,16 @@ def ask_if_anomalous(new_spans, human_labels_path=DEFAULT_HUMAN_PATH):
     human_labels = pd.np.zeros(len(new_spans), dtype=int)
     for i, (start, end) in enumerate(new_spans):
         print("{}: {} to {}".format(i, start, end))
-        ans = input("Is the time span above anomalous (Y/N)? ")
+        ans = input("Is the time span above anomalous [Y]/N/Yall/Nall? ")
         if re.match(r'y|Y|Yes|YES|yes|yep|yup', ans):
             human_labels[i] = 1
+        elif ans.lower().strip().endswith('all'):
+            if ans.lower().strip() == 'yall':
+                human_labels[i:] = np.array([1] * len(human_labels[i:]))
+                break
+            elif ans.lower().strip() == 'nall':
+                break
+
     dfnew = pd.DataFrame(new_spans, columns=df.columns[:2])
     dfnew[df.columns[-1]] = human_labels
     df = df.append(dfnew, ignore_index=True)
