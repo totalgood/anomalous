@@ -9,6 +9,7 @@ import logging.config
 import os
 import json
 import platform
+
 from traceback import print_exc, format_exc
 
 import pandas as pd
@@ -85,6 +86,13 @@ LOGGING = {
         #     'facility': LOG_FACILITY,
         #     'address': LOG_ADDRESS,
         # },
+        'logging.handlers.SysLogHandler': {
+            'level': 'DEBUG',
+            'class': 'logging.handlers.SysLogHandler',
+            'formatter': 'django',
+            'facility': LOG_FACILITY,
+            'address': LOG_ADDRESS,
+        },
         u'console': {
             u'class': u'logging.StreamHandler',
             u'level': u'DEBUG',

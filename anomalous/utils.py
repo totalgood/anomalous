@@ -277,12 +277,15 @@ def is_anomalous(df, thresholds=None):
                        columns=['anomaly__<{}&>{}__{}'.format(low, high, query) for query, low, high in zip(queries, lows, highs)] + ['anomaly__any'],
                        index=df.index)
     for dfk, ansk, (low, high) in zip(queries, ans.columns, values):
-        high = np.nan if high is None else high
-        low = np.nan if low is None else low
         high = float(high) if isinstance(high, str) else high
         low = float(low) if isinstance(low, str) else low
+        high = np.nan if pd.isnull(high) else high
+        low = np.nan if pd.isnull(low) else low
         if dfk in queries:
-            ans[ansk] = ~(df[dfk] >= low) & ~(df[dfk] <= high)
+            if not pd.isnull(high):
+                ans[ansk] |= df[dfk] > high
+            if not pd.isnull(low):
+                ans[ansk] |= df[dfk] < low
             ans['anomaly__any'] |= ans[ansk]
         else:
             logger.error('No threshold defined for {}'.format(dfk))
