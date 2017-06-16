@@ -364,11 +364,18 @@ def plot_predictions(df=None, fillna_method='ffill', dropna=False, filename='tim
     """
     df = DEFAULT_JSON_DIR if df is None else df
     df = clean_dd_all(df, fillna_method=fillna_method, dropna=dropna).astype(float) if isinstance(df, str) else pd.DataFrame(df)
-
+    columns = df.columns
     rf = pickle.load(open(DEFAULT_MODEL_PATH, 'rb'))
+
+    logger.info(rf.columns)
+    columns = getattr(rf, 'columns', getattr(rf, 'feature_names_'))
+    if columns is None:
+        logger.warn("Unable to find a columns attribute on the model, so just assuming that they are the same ones in the latest database columns")
+        columns = df.columns[:rf.n_features_]
+
     # df = clean_dd_all(df)
     # thresholds = [(q['query'], q['threshold']) for q in CFG.queries if q['query'] in df.columns]
-    predictions = rf.predict(df.values)
+    predictions = rf.predict(df[columns].values)
     anoms = pd.DataFrame(predictions,
                          columns=[q['query'] for q in CFG.queries if q['query'] in df.columns] + ['anomaly__any'],
                          index=df.index.values)

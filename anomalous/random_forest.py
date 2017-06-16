@@ -9,10 +9,9 @@ X = df.values
 anoms = is_anomalous(df)
 Y = anoms.values
 
-rf = RandomForestClassifier(max_depth=20, class_weight='balanced', n_estimators=100, n_jobs=-1, warm_start=True)
+rf = RandomForestClassifier(max_depth=14, class_weight='balanced', n_estimators=100, n_jobs=-1, warm_start=True)
 Y = anoms.values
-for attempt in range(10):
-    rf = rf.fit(X, Y)
+rf = rf.fit(X, Y)
 Y_pred = rf.predict(X)
 Y_pred
 # array([[ 0.,  0.,  0.,  0.,  0.,  1.],
@@ -23,8 +22,10 @@ Y_pred
 #        [ 0.,  0.,  1.,  1.,  0.,  1.],
 #        [ 0.,  0.,  1.,  1.,  0.,  1.]])
 # correlation for deep and wide random forest
-pd.np.diag((Y_pred.T.dot(Y) / Y_pred.T.dot(Y_pred) / Y.T.dot(Y)).round(3))
+print(pd.np.diag((Y_pred.T.dot(Y) / Y_pred.T.dot(Y_pred) / Y.T.dot(Y)).round(3)))
 #  array([ 1.   ,  1.   ,  1.   ,  1.   ,  0.996,  1.   ])
+rf.columns = list(df.columns)
+rf.feature_names_ = list(df.columns)
 pickle.dump(rf, open(DEFAULT_MODEL_PATH, 'wb'))
 
 
