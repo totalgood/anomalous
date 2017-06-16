@@ -318,14 +318,15 @@ def ask_if_anomalous(new_spans, human_labels_path=DEFAULT_HUMAN_PATH):
     for i, (start, end) in enumerate(new_spans):
         print("{}: {} to {}".format(i, start, end))
         ans = input("Is the time span above anomalous [Y]/N/Yall/Nall? ") or 'Y'
+        ans = ans.strip()
         if re.match(r'y|Y|Yes|YES|yes|yep|yup', ans):
             human_labels[i] = 1
         elif ans.lower().strip().endswith('all'):
-            if ans.lower().strip() == 'yall':
+            if ans.lower() == 'yall':
                 human_labels[i:] = np.array([1] * len(human_labels[i:]))
                 i = len(new_spans)
                 break
-            elif ans.lower().strip() == 'nall':
+            elif ans.lower() == 'nall':
                 i = len(new_spans)
                 break
 
