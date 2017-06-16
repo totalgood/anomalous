@@ -319,20 +319,28 @@ def ask_if_anomalous(new_spans, human_labels_path=DEFAULT_HUMAN_PATH):
         print("{}: {} to {}".format(i, start, end))
         ans = input("Is the time span above anomalous [Y]/N/Yall/Nall? ") or 'Y'
         ans = ans.strip()
+        print("GOT: {}".format(ans))
         if re.match(r'y|Y|Yes|YES|yes|yep|yup', ans):
             human_labels[i] = 1
-        elif ans.lower().strip().endswith('all'):
+            print("YES it was anomalous")
+        elif ans.lower().endswith('all'):
             if ans.lower() == 'yall':
+                print("YES, ALL were anomalous!!")
                 human_labels[i:] = np.array([1] * len(human_labels[i:]))
                 i = len(new_spans)
                 break
             elif ans.lower() == 'nall':
+                print("NO, ALL were clean...")
                 i = len(new_spans)
                 break
+        else:
+            print("NO it was clean")
 
     dfnew = pd.DataFrame(new_spans, columns=df.columns[:2])
     dfnew[df.columns[-1]] = human_labels
     df = df.append(dfnew, ignore_index=True)
+    print(df)
+    print(dfnew)
     df.to_csv(human_labels_path)
     return df
 
