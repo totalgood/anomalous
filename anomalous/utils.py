@@ -322,7 +322,7 @@ def ask_if_anomalous(new_spans, human_labels_path=DEFAULT_HUMAN_PATH):
         ans = input("Is the time span above anomalous [Y]/N/Yall/Nall? ") or 'Y'
         ans = ans.strip()
         print("GOT: {}".format(ans))
-        if re.match(r'y|Y|Yes|YES|yes|yep|yup', ans):
+        if re.match(r'^(y|Y|Yes|YES|yes|yep|yup)$', ans):
             human_labels[i] = 1
             print("YES it was anomalous")
         elif ans.lower().endswith('all'):
