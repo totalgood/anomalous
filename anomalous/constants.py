@@ -11,6 +11,9 @@ import json
 import platform
 from traceback import print_exc, format_exc
 
+import pandas as pd
+from pandas import np
+
 from pugnlp.util import dict2obj
 
 
@@ -63,7 +66,7 @@ NAME_STRIP_CHRS = '\t\n\r :-=+!._$%#@[]'
 
 LOGGING = {
     'version': 1,
-    'disable_existing_loggers': False,
+    'disable_existing_loggers': True,
 
     'formatters': {
         'django': {
@@ -75,13 +78,13 @@ LOGGING = {
     },
 
     'handlers': {
-        'logging.handlers.SysLogHandler': {
-            'level': 'DEBUG',
-            'class': 'logging.handlers.SysLogHandler',
-            'formatter': 'django',
-            'facility': LOG_FACILITY,
-            'address': LOG_ADDRESS,
-        },
+        # 'logging.handlers.SysLogHandler': {
+        #     'level': 'DEBUG',
+        #     'class': 'logging.handlers.SysLogHandler',
+        #     'formatter': 'django',
+        #     'facility': LOG_FACILITY,
+        #     'address': LOG_ADDRESS,
+        # },
         u'console': {
             u'class': u'logging.StreamHandler',
             u'level': u'DEBUG',
@@ -91,12 +94,18 @@ LOGGING = {
     },
 
     'loggers': {
-        'loggly': {
-            'handlers': [u'console', 'logging.handlers.SysLogHandler'],
+        # 'loggly': {
+        #     'handlers': [u'console', 'logging.handlers.SysLogHandler'],
+        #     'propagate': True,
+        #     'format': 'django: %(message)s',
+        #     'level': 'DEBUG',
+        # },
+        'anom': {
+            'handlers': [u'console'],
             'propagate': True,
-            'format': 'django: %(message)s',
             'level': 'DEBUG',
         },
+
     },
 }
 
@@ -137,7 +146,9 @@ def parse_config(path=DEFAULT_CONFIG_PATH, section=None, eval_keys=['metrics', '
     for k in eval_keys:
         if k in configdict:
             try:
-                configdict[k] = eval(configdict[k], {'__builtins__': None}, {})
+                # can't sandbox eval with {'__builtins__': {}} # py3.5 or {'__builtins__': None} # py2.7
+                # because `float('nan')` requires builtins
+                configdict[k] = eval(configdict[k], {'pd': pd, 'np': np}, {})
             except:
                 logger.error('Unable to eval(configdict[{}]):\n{}'.format(k, configdict[k]))
                 msg = format_exc()
