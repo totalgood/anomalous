@@ -294,14 +294,19 @@ def is_anomalous(df, thresholds=None):
 
 def join_spans(spans):
     spans = list(spans)
+    if len(spans) < 1:
+        return [list(s) for s in spans]
+    print(spans)
+    spans = list(spans)
     joined_spans = [list(spans[0])]
+    print(joined_spans)
     if len(spans) > 1:
         for i, (start, stop) in enumerate(spans[1:]):
-            if start > joined_spans[i][1]:
+            if len(joined_spans) > i and start > joined_spans[-1][1]:
                 joined_spans += [[start, stop]]
             else:
                 # if the span is zero length or started before it stopped then don't add it, just shorten the previous span
-                joined_spans[i - 1][1] = stop
+                joined_spans[-1][1] = stop
     return joined_spans
 
 
@@ -357,7 +362,7 @@ def plot_all(df=None, fillna_method='ffill', dropna=False, filename='time-series
     stops = list(df.index[anom_spans < 0])
     if len(stops) == len(starts) - 1:
         stops += [df.index.values[-1]]
-    anom_spans = join_spans(zip(starts, stops))
+    anom_spans = list(zip(starts, stops))
 
     print(anom_spans)
 
@@ -402,7 +407,7 @@ def plot_predictions(df=None, fillna_method='ffill', dropna=False, filename='tim
     if len(stops) == len(starts) - 1:
         stops += [df.index.values[-1]]
     if len(starts) > 0 and len(stops) > 0:
-        anom_spans = join_spans(zip(starts, stops))
+        anom_spans = list(zip(starts, stops))
     else:
         anom_spans = []
 
