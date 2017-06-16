@@ -9,7 +9,7 @@ import logging.config
 import os
 import json
 import platform
-from traceback import print_exc
+from traceback import print_exc, format_exc
 
 from pugnlp.util import dict2obj
 
@@ -139,7 +139,10 @@ def parse_config(path=DEFAULT_CONFIG_PATH, section=None, eval_keys=['metrics', '
             try:
                 configdict[k] = eval(configdict[k], {'__builtins__': None}, {})
             except:
-                pass
+                logger.error('Unable to eval(configdict[{}]):\n{}'.format(k, configdict[k]))
+                msg = format_exc()
+                logger.error(msg)
+                print(msg)
     return dict2obj(configdict)
 
 
