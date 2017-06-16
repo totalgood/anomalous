@@ -282,7 +282,7 @@ def is_anomalous(df, thresholds=None):
         high = float(high) if isinstance(high, str) else high
         low = float(low) if isinstance(low, str) else low
         if dfk in queries:
-            ans[ansk] = (df[dfk] > high) and (df[dfk] < low)
+            ans[ansk] = ~(df[dfk] >= low) & ~(df[dfk] <= high)
             ans['anomaly__any'] |= ans[ansk]
         else:
             logger.error('No threshold defined for {}'.format(dfk))
