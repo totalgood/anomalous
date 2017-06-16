@@ -295,11 +295,13 @@ def is_anomalous(df, thresholds=None):
 def join_spans(spans):
     spans = list(spans)
     joined_spans = [list(spans[0])]
-    for i, (start, stop) in enumerate(spans[1:]):
-        if start > joined_spans[i][1]:
-            joined_spans += [[start, stop]]
-        else:
-            joined_spans[i - 1][1] = stop
+    if len(spans) > 1:
+        for i, (start, stop) in enumerate(spans[1:]):
+            if start > joined_spans[i][1]:
+                joined_spans += [[start, stop]]
+            else:
+                # if the span is zero length or started before it stopped then don't add it, just shorten the previous span
+                joined_spans[i - 1][1] = stop
     return joined_spans
 
 
@@ -355,7 +357,7 @@ def plot_all(df=None, fillna_method='ffill', dropna=False, filename='time-series
     stops = list(df.index[anom_spans < 0])
     if len(stops) == len(starts) - 1:
         stops += [df.index.values[-1]]
-    anom_spans = join_spans(join_spans(zip(starts, stops)))
+    anom_spans = join_spans(zip(starts, stops))
 
     print(anom_spans)
 
