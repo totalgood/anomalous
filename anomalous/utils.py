@@ -508,8 +508,15 @@ def get_dd_metric(name=None, servers=None, start=None, end=None):
     query = name + r'{*}by{host}'  # 'system.cpu.idle{*}by{host}'
     # series = dd.api.Metric.query(start=now - 3600 * 24, end=now, query=query)
     logger.debug('start={}, end={}, query={}'.format(start, end, query))
-    series = dd.api.Metric.query(start=start, end=end, query=query)
-    return clean_dd_df(series)
+    series = None
+    for fallback_exp in range(1, 8):
+        series = dd.api.Metric.query(start=start, end=end, query=query)
+        try:
+            return clean_dd_df(series)
+        except KeyError:
+            time.sleep(2 ** fallback_exp * 60)
+    return pd.DataFrame()
+
 
 
 def get_dd_metrics(names=None, servers=None, start=None, end=None):
