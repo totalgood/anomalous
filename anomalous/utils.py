@@ -420,9 +420,7 @@ def plot_predictions(df=None, fillna_method='ffill', dropna=False, filename='tim
         filename=filename,
         )
 
-    ask_if_anomalous(anom_spans)
-
-    return df
+    return df, anom_spans
 
 
 def get_dd_hosts(pattern='', regex=''):

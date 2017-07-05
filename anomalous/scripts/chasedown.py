@@ -13,6 +13,7 @@ from builtins import *  # noqa
 import argparse
 import sys
 import os
+import time
 import datetime
 
 import pandas as pd
@@ -20,9 +21,9 @@ from nlpia.data.loaders import read_csv
 
 from anomalous import __version__
 from anomalous.constants import logging, parse_config
-from anomalous.constants import DEFAULT_DB_CSV_FILENAME, DEFAULT_DB_DIR, DEFAULT_CONFIG_FILENAME
+from anomalous.constants import DEFAULT_DB_CSV_FILENAME, DEFAULT_DB_DIR, DEFAULT_CONFIG_FILENAME, DEFAULT_HUMAN_PATH
 from anomalous.utils import stdout_logging, argparse_open_file, argparse_datetime_span, clean_dd_df, update_db
-from anomalous.utils import plot_predictions, update_config, clean_dd_all
+from anomalous.utils import plot_predictions, update_config, clean_dd_all, ask_if_anomalous
 
 __author__ = "Hobson Lane"
 __copyright__ = "AuthorityLabs"
@@ -93,6 +94,11 @@ def parse_args(args):
         action='store_const',
         const=logging.INFO)
     parser.add_argument(
+        '-n', '--noninteractive', '-q', '--quiet',
+        dest="noninteractive", default=None,
+        help="Noninteractive mode. Only errors will be logged and no anomaly training or data plots will be performed.",
+        action='store_true')
+    parser.add_argument(
         '-vv', '--very-verbose',
         dest="loglevel",
         help="Very verbose logging (set loglevel to DEBUG).",
@@ -147,7 +153,10 @@ def main(args):
     db = db.append(df)
 
     db = clean_dd_all(db)
-    plot_predictions(db.loc[datetime.datetime.now() - datetime.timedelta(1):])
+    df, new_anomaly_spans = plot_predictions(db.loc[datetime.datetime.now() - datetime.timedelta(1):])
+    print('\n\nWaiting for plot to launch in your browser before asking about anomalies in it...\n')
+    time.sleep(8)  # wait for all Firefox error messages to clear the console
+    ask_if_anomalous(new_spans=new_anomaly_spans, human_labels_path=DEFAULT_HUMAN_PATH)
 
 
 def run():
