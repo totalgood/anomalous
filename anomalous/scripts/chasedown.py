@@ -94,9 +94,21 @@ def parse_args(args):
         action='store_const',
         const=logging.INFO)
     parser.add_argument(
-        '-n', '--noninteractive', '-q', '--quiet',
+        '--noquestion',
+        dest="noquestion", default=None,
+        help="Don't ask questions about anomalous time spans (for recording in training set).",
+        action='store_true')
+    parser.add_argument(
+        '-n', '--noninteractive',
         dest="noninteractive", default=None,
-        help="Noninteractive mode. Only errors will be logged and no anomaly training or data plots will be performed.",
+        help="Noninteractive mode. "
+             "Only errors will be logged and no anomaly training or data plots will be performed "
+             "(equivalent to --noquestion --noplot).",
+        action='store_true')
+    parser.add_argument(
+        '--noplot',
+        dest="noplot", default=None,
+        help="Don't display a plot of the downloaded data and anomalies in the browser.",
         action='store_true')
     parser.add_argument(
         '-vv', '--very-verbose',
@@ -118,6 +130,8 @@ def main(args):
     stdout_logging(args.loglevel)
     msg = "Arguments:\n{}".format(args.__dict__)
     logger.info(msg)
+    if args.noninteractive:
+        args.noplot, args.noquestion = True, True
     args.db = args.db or DEFAULT_DB_DIR
     args.db_cfg = args.db_cfg or os.path.join(args.db, DEFAULT_CONFIG_FILENAME)
     cfg = parse_config(path=args.db_cfg, section='chasedown')
@@ -146,17 +160,19 @@ def main(args):
     logger.info(msg)
     logger.debug(df.describe())
 
-    if os.path.isfile(cfg.db_csv):
-        db = read_csv(cfg.db_csv)
-    else:
-        db = pd.DataFrame()
-    db = db.append(df)
-
-    db = clean_dd_all(db)
-    df, new_anomaly_spans = plot_predictions(db.loc[datetime.datetime.now() - datetime.timedelta(1):])
-    print('\n\nWaiting for plot to launch in your browser before asking about anomalies in it...\n')
-    time.sleep(8)  # wait for all Firefox error messages to clear the console
-    ask_if_anomalous(new_spans=new_anomaly_spans, human_labels_path=DEFAULT_HUMAN_PATH)
+    if not args.noplot and not args.noquestion:
+        if os.path.isfile(cfg.db_csv):
+            db = read_csv(cfg.db_csv)  # this should contain the updated database with the recently aquired dat
+        else:
+            db = pd.DataFrame()
+            db = db.append(df)
+        db = clean_dd_all(db)
+        df, new_anomaly_spans = plot_predictions(db.loc[start:end])
+    if not args.noquestion:
+        if not args.noplot:
+            print('\n\nWaiting 10 seconds for plot to launch in your browser (usually Firefox) before asking about anomalies in it...\n')
+            time.sleep(10)  # wait for all Firefox error messages to clear the console
+        ask_if_anomalous(new_spans=new_anomaly_spans, human_labels_path=DEFAULT_HUMAN_PATH)
 
 
 def run():

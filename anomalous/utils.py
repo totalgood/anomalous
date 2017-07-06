@@ -518,7 +518,6 @@ def get_dd_metric(name=None, servers=None, start=None, end=None):
     return pd.DataFrame()
 
 
-
 def get_dd_metrics(names=None, servers=None, start=None, end=None):
     metric_names = CFG.metrics if names is None else sorted(names)
     df_metrics = pd.DataFrame()
