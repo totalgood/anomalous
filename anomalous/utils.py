@@ -376,26 +376,28 @@ def plot_all(df=None, fillna_method='ffill', dropna=False, filename='time-series
     return df
 
 
-def plot_predictions(df=None, fillna_method='ffill', dropna=False, filename='time-series.html'):
+def plot_predictions(df, predictions=None, fillna_method='ffill', dropna=False, filename='time-series.html'):
     """Plot predicted anomalies and queries that likely triggered them in an HTML file and print the anomalous time spans
 
     >>> plot_predictions(df=db[datetime.datetime.now() - datetime.timedelta(1):])
     """
-    df = DEFAULT_JSON_DIR if df is None else df
-    df = clean_dd_all(df, fillna_method=fillna_method, dropna=dropna).astype(float) if isinstance(df, str) else pd.DataFrame(df)
+    # df = DEFAULT_JSON_DIR if df is None else df
+    df = clean_dd_all(df, fillna_method=fillna_method, dropna=dropna).astype(float) if not isinstance(df, str) else pd.DataFrame(df)
     columns = df.columns
-    rf = pickle.load(open(DEFAULT_MODEL_PATH, 'rb'))
+    if predictions is None:
+        rf = pickle.load(open(DEFAULT_MODEL_PATH, 'rb'))
 
-    logger.info(rf.columns)
-    columns = getattr(rf, 'columns', getattr(rf, 'feature_names_'))
-    if columns is None:
-        logger.warn("Unable to find a columns attribute on the model, so just assuming that they are the same ones in the latest database columns")
-        columns = df.columns[:rf.n_features_]
+        logger.info(rf.columns)
+        columns = getattr(rf, 'columns', getattr(rf, 'feature_names_'))
+        if columns is None:
+            logger.warn("Unable to find a columns attribute on the model. Assuming they are the same ones in the latest database columns")
+            columns = df.columns[:rf.n_features_]
 
-    # df = clean_dd_all(df)
-    # thresholds = [(q['query'], q['threshold']) for q in CFG.queries if q['query'] in df.columns]
-    predictions = rf.predict(df[columns].values)
-    anoms = pd.DataFrame(predictions,
+        # df = clean_dd_all(df)
+        # thresholds = [(q['query'], q['threshold']) for q in CFG.queries if q['query'] in df.columns]
+        predictions = rf.predict(df[columns].values)
+
+    anoms = pd.DataFrame(getattr(predictions, 'values', predictions),
                          columns=[q['query'] for q in CFG.queries if q['query'] in df.columns] + ['anomaly__any'],
                          index=df.index.values)
     # anoms = is_anomalous(df)  # manually-determined thresholds on queries from Chase
@@ -414,9 +416,23 @@ def plot_predictions(df=None, fillna_method='ffill', dropna=False, filename='tim
 
     df = df[[c for c in anoms.columns if c in df.columns]]
     df['Num. Anomalous Monitors'] = (anoms[anoms.columns[:-1]].sum(axis=1) + .01)
-    df.columns = [normalize_metric_name(c, max_len=64) for c in df.columns]
+    num_anom_types = anoms.shape[1]
+    anomid_matrix = (np.arange(num_anom_types).reshape(num_anom_types, 1) + 1).dot(np.ones((1, len(anoms)))).T
+    anomid_matrix = anomid_matrix * anoms.astype(bool)
+    df['Max Anomalous Monitor ID'] = anomid_matrix.values[:, :-1].max(axis=1)
+    anomids = np.arange(len(anoms.columns) - 1)[anoms.any(axis=0).values[:-1]]
+    df.columns = [normalize_metric_name(c, max_len=64) for c in df.columns[:-2]] + list(df.columns[-2:])
+    anomnames = df.columns.values[:-2][anoms.any(axis=0).values[:-1]]
+    heading = '# Types of anomalies triggered within this time period:\n    '
+    msg = '    \n'.join(': '.join([str(tup[0]), str(tup[1])])
+        for tup in list(zip(anomids, anomnames)))
+    print(heading + msg)
+    logger.info(heading + msg)
+    df.columns = [('!! ' if i in anomids else '') + c for i, c in enumerate(df.columns[:-2])] + list(df.columns[-2:])
+    columns = list(df.columns)
+    columns[-1] = columns[-1] + '\n    ' + msg
     offline.plot(df.iplot(
-        asFigure=True, xTitle='Date-Time', yTitle='Monitor Value', kind='scatter', logy=True,
+        asFigure=True, title=msg, xTitle='Date-Time', yTitle='Monitor Value', kind='scatter', logy=True,
         vspan=anom_spans),
         filename=filename,
         )
