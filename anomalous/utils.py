@@ -24,6 +24,7 @@ from pandas import np
 import dateutil
 import timestring
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.ensemble import RandomForestClassifier
 from plotly import offline
 import cufflinks  # noqa
 import datadog as dd  # noqa
@@ -684,8 +685,86 @@ def update_meta(meta=None, drop=False):
     return meta
 
 
-def retrain_model(path=DEFAULT_MODEL_PATH):
-    with open(path, 'rt') as f:
-        model = pickle.load(f)
-    with open(path, 'rt') as f:
+def mask_from_spans(spans, freq='5min'):
+    start, end, isanom = zip(*getattr(spans, 'values', np.array(spans)).tolist())
+    start, end, isanom = pd.to_datetime(start), pd.to_datetime(end), np.array(isanom)
+    mask = pd.Series(index=pd.date_range(start=start.min(), end=end.max(), freq=freq))
+    for (t0, t1, v) in zip(start, end, isanom):
+        mask.loc[(mask.index >= t0) & (mask.index <= t1)] = v
+    return mask
+
+
+def model_error(model=DEFAULT_MODEL_PATH, X=DEFAULT_DB_CSV_PATH, Y=None):
+    model = load_model(model)
+    X = read_csv(X) if isinstance(X, str) else X
+    X = clean_dd_all(X)
+    Y = is_anomalous(X) if Y is None else Y
+    Y_pred = model.predict(X)
+    # Y_pred
+    # # array([[ 0.,  0.,  0.,  0.,  0.,  1.],
+    # #        [ 0.,  0.,  0.,  0.,  0.,  1.],
+    # #        [ 0.,  0.,  0.,  0.,  0.,  1.],
+    # #        ...,
+    # #        [ 0.,  0.,  1.,  1.,  0.,  1.],
+    # #        [ 0.,  0.,  1.,  1.,  0.,  1.],
+    # #        [ 0.,  0.,  1.,  1.,  0.,  1.]])
+    # # correlation for deep and wide random forest
+    #  array([ 1.   ,  1.   ,  1.   ,  1.   ,  0.996,  1.   ])
+    # Pierson Correlation Coefficient
+    err = pd.np.diag((Y_pred.T.dot(Y) / Y_pred.T.dot(Y_pred) / Y.T.dot(Y)))
+    return err
+
+
+def load_model(model=DEFAULT_MODEL_PATH, columns=None):
+    if isinstance(model, str):
+        with open(model, 'rb') as f:
+            model = pickle.load(f)
+    columns = list(read_csv(DEFAULT_DB_CSV_PATH).columns if columns is None else columns)
+    if len(columns) != model.n_features_:
+        columns = list(columns)[:model.n_features_]
+        logger.warn('Number of database columns (shape={}) does not match the number of model features ({})'.format(
+            len(columns), model.n_features_))
+    model.columns = columns
+    model.feature_names_ = model.columns
+    return model
+
+
+def save_model(model, path=DEFAULT_MODEL_PATH, backup=False):
+    if backup:
+        raise NotImplementedError('save_model(backup=True) not supported!')
+    with open(path, 'wb') as f:
         pickle.dump(model, f)
+    return path
+
+
+def retrain_model(path=DEFAULT_MODEL_PATH, human_labels=None, **kwargs):
+    # with open(path, 'rb') as f:
+    #     old_model = pickle.load(f)
+
+    rf_kwargs = {
+        'max_depth': 15,
+        'class_weight': 'balanced',
+        'n_estimators': 250,
+        'oob_score': True,
+        'n_jobs': -1,
+        'verbose': 2
+        }
+    rf_kwargs.update(kwargs)
+    X = read_csv(DEFAULT_DB_CSV_PATH)
+    X = clean_dd_all(X)
+    Y = is_anomalous(X)
+
+    human_labels = read_csv(human_labels) if isinstance(human_labels, str) else human_labels
+    if human_labels is None:
+        Y
+    else:
+        Y = mask_from_spans(human_labels)
+    Y = Y.values
+
+    rf = RandomForestClassifier(**rf_kwargs)
+    rf = rf.fit(X, Y)
+
+    rf.columns = list(X.columns)
+    rf.feature_names_ = list(X.columns)
+
+    return rf

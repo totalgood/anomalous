@@ -94,9 +94,14 @@ def parse_args(args):
         action='store_const',
         const=logging.INFO)
     parser.add_argument(
-        '--noquestion',
+        '--noquestion', '--noquestions', '--nolabel', '--nolabels', '--nolabeling',
         dest="noquestion", default=None,
         help="Don't ask questions about anomalous time spans (for recording in training set).",
+        action='store_true')
+    parser.add_argument(
+        '-c', '--cache', '--cached', '--noupdate',
+        dest="noupdate", default=None,
+        help="Don't download new data from Data Dog, use cached database file to product plots and anomaly questions.",
         action='store_true')
     parser.add_argument(
         '-n', '--noninteractive',
@@ -143,14 +148,20 @@ def main(args):
     msg = "cfg.update(args):\n{}".format(cfg.__dict__)
     logger.info(msg)
 
-    # TODO: datadog query is first priority, but can't we do both a query and a file?
-    if isinstance(cfg.timespan, tuple):
+    if isinstance(cfg.timespan, (tuple, list)):
         start, end = cfg.timespan
     elif cfg.file_or_none is None:
         now = datetime.datetime.now()
         start, end = (now - datetime.timedelta(1), now)
 
-    if cfg.file_or_none is None:
+    if cfg.noupdate:
+        try:
+            df = read_csv(cfg.db_csv)
+        except IOError:
+            logger.warn('Unable to read database from file {}'.format(cfg.db_csv))
+            df = pd.DataFrame()
+        df = df[(df.index >= start) & (df.index <= end)]
+    elif cfg.file_or_none is None:
         df = update_db(metric_names=cfg.metrics, start=start, end=end, db=cfg.db_csv, drop=False, save=False)
     else:
         df = clean_dd_df(cfg.file_or_none)
@@ -160,7 +171,7 @@ def main(args):
     logger.info(msg)
     logger.debug(df.describe())
 
-    if not args.noplot and not args.noquestion:
+    if not cfg.noplot or not cfg.noquestion:
         if os.path.isfile(cfg.db_csv):
             db = read_csv(cfg.db_csv)  # this should contain the updated database with the recently aquired dat
         else:
@@ -168,8 +179,8 @@ def main(args):
             db = db.append(df)
         db = clean_dd_all(db)
         df, new_anomaly_spans = plot_predictions(db.loc[start:end])
-    if not args.noquestion:
-        if not args.noplot:
+    if not cfg.noquestion:
+        if not cfg.noplot:
             print('\n\nWaiting 10 seconds for plot to launch in your browser (usually Firefox) before asking about anomalies in it...\n')
             time.sleep(10)  # wait for all Firefox error messages to clear the console
         ask_if_anomalous(new_spans=new_anomaly_spans, human_labels_path=DEFAULT_HUMAN_PATH)

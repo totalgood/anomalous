@@ -9,7 +9,7 @@ X = df.values
 anoms = is_anomalous(df)
 Y = anoms.values
 
-rf = RandomForestClassifier(max_depth=14, class_weight='balanced', n_estimators=100, n_jobs=-1, warm_start=True)
+rf = RandomForestClassifier(max_depth=14, class_weight='balanced', n_estimators=250, oob_score=True, n_jobs=-1)
 Y = anoms.values
 rf = rf.fit(X, Y)
 Y_pred = rf.predict(X)
