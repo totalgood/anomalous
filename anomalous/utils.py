@@ -423,7 +423,7 @@ def plot_predictions(df, predictions=None, fillna_method='ffill', dropna=False, 
     anomids = np.arange(len(anoms.columns) - 1)[anoms.any(axis=0).values[:-1]]
     df.columns = [normalize_metric_name(c, max_len=64) for c in df.columns[:-2]] + list(df.columns[-2:])
     anomnames = df.columns.values[:-2][anoms.any(axis=0).values[:-1]]
-    heading = '# Types of anomalies triggered within this time period:\n    '
+    heading = '# Types of anomalies found within this time period:\n    '
     msg = '    \n'.join(': '.join([str(tup[0]), str(tup[1])])
         for tup in list(zip(anomids, anomnames)))
     print(heading + msg)

@@ -99,7 +99,7 @@ def parse_args(args):
         help="Don't ask questions about anomalous time spans (for recording in training set).",
         action='store_true')
     parser.add_argument(
-        '-c', '--cache', '--cached', '--noupdate',
+        '-c', '--cache', '--cached', '--noupdate', '--nodownload',
         dest="noupdate", default=None,
         help="Don't download new data from Data Dog, use cached database file to product plots and anomaly questions.",
         action='store_true')
