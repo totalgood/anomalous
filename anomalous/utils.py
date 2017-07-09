@@ -225,7 +225,7 @@ def clean_dd_all(df=None, fillna_method='ffill', dropna=False, consolidate_index
 
     df.index = pd.to_datetime(df.index.values)
     df.sort_index(inplace=True)
-    df.groupby(df.index).mean()
+    df = df.groupby(df.index).mean()
     df = df.reindex()
 
     if consolidate_index:
@@ -616,6 +616,14 @@ def update_config(cfg, args, skip_nones=True):
     return dict2obj(update_config_dict(cfg, args, skip_nones=skip_nones))
 
 
+def clean_time_series(df):
+    df.sort_index(inplace=True)
+    df = df.reindex()
+    df = df.groupby([df.index]).mean()
+    df.sort_index(inplace=True)
+    df = df.reindex()
+
+
 def update_db(db=None, metric_names=CFG.metrics, start=None, end=None, drop=False, save=True):
     """Query DataDog to retrieve all the metrics for the time span indicated and save them to db.csv.gz"""
     dbpath = db
@@ -643,22 +651,18 @@ def update_db(db=None, metric_names=CFG.metrics, start=None, end=None, drop=Fals
         db = df
     else:
         db = db.append(df)
-    db.sort_index(inplace=True)
-    db = db.reindex()
-    db = db.groupby([db.index]).mean()
-    db.sort_index(inplace=True)
-    db = db.reindex()
-    if isinstance(dbpath, str) and save:
-        db.to_csv(dbpath, compression='gzip')
-        print(db.columns)
-        logger.info("Saved db.shape={} to {}".format(db.shape, dbpath))
-        logger.debug(db.describe())
+
+    db = clean_time_series(db)
+    # if isinstance(dbpath, str) and save:
+    #     db.to_csv(dbpath, compression='gzip')
+    #     print(db.columns)
+    #     logger.info("Saved db.shape={} to {}".format(db.shape, dbpath))
+    #     logger.debug(db.describe())
 
     df = get_dd_queries(CFG.queries, start=start, end=end)
-    db = db.append(df)
-    db.sort_index(inplace=True)
-    db.reindex()
-    if isinstance(dbpath, str):
+    db = clean_time_series(db.append(df))
+
+    if isinstance(dbpath, str) and save:
         logger.info('Saving appended database of historical metrics (shaped {}) to a single CSV file, so this may take a while (minutes)...'.format(
             df.shape))
         db.to_csv(dbpath, compression='gzip')
