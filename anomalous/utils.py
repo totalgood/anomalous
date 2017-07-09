@@ -616,7 +616,8 @@ def update_config(cfg, args, skip_nones=True):
     return dict2obj(update_config_dict(cfg, args, skip_nones=skip_nones))
 
 
-def clean_time_series(df):
+def clean_time_series_df(df):
+    df.index = pd.to_datetime(df.index)
     df.sort_index(inplace=True)
     df = df.reindex()
     df = df.groupby([df.index]).mean()
@@ -652,7 +653,7 @@ def update_db(db=None, metric_names=CFG.metrics, start=None, end=None, drop=Fals
     else:
         db = db.append(df)
 
-    db = clean_time_series(db)
+    db = clean_time_series_df(db)
     # if isinstance(dbpath, str) and save:
     #     db.to_csv(dbpath, compression='gzip')
     #     print(db.columns)
