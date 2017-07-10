@@ -647,15 +647,20 @@ def update_db(db=None, metric_names=CFG.metrics, start=None, end=None, drop=Fals
 
     print('before {}'.format(len(db)))
     df = get_dd_metrics(CFG.metrics, start=start, end=end)
+    df = clean_time_series_df(df)
+    print('update len {}'.format(len(df)))
     if drop:
         db = df
     else:
         db = db.append(df)
     df = get_dd_queries(CFG.queries, start=start, end=end)
+    df = clean_time_series_df(df)
+    print('update len {}'.format(len(df)))
     db = db.append(df)
 
     print('after {}'.format(len(db)))
     print('db.index[-20:] {}'.format(db.index[-20:]))
+    print((start, end))
     print('inside update_db: {}'.format(len(db[(db.index >= start) & (db.index <= end)])))
     db = clean_time_series_df(db)
     # if isinstance(dbpath, str) and save:
