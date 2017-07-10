@@ -672,6 +672,7 @@ def save_db(db, path=DEFAULT_DB_CSV_PATH):
     logger.info(db.columns)
     logger.info("Saved db.shape={} to {}".format(db.shape, path))
     logger.debug(db.describe())
+    return db
 
 
 def get_meta():
