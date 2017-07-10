@@ -653,24 +653,27 @@ def update_db(db=None, metric_names=CFG.metrics, start=None, end=None, drop=Fals
     else:
         db = db.append(df)
 
+    df = get_dd_queries(CFG.queries, start=start, end=end)
+    db = db.append(df)
     db = clean_time_series_df(db)
     # if isinstance(dbpath, str) and save:
     #     db.to_csv(dbpath, compression='gzip')
     #     print(db.columns)
     #     logger.info("Saved db.shape={} to {}".format(db.shape, dbpath))
     #     logger.debug(db.describe())
-
-    df = get_dd_queries(CFG.queries, start=start, end=end)
-    db = clean_time_series(db.append(df))
-
     if isinstance(dbpath, str) and save:
-        logger.info('Saving appended database of historical metrics (shaped {}) to a single CSV file, so this may take a while (minutes)...'.format(
-            df.shape))
-        db.to_csv(dbpath, compression='gzip')
-        logger.info(db.columns)
-        logger.info("Saved db.shape={} to {}".format(db.shape, dbpath))
-        logger.debug(db.describe())
+        db = save_db(db, path=dbpath)
     return db
+
+
+def save_db(db, path=DEFAULT_DB_CSV_PATH):
+    db = clean_time_series_df(db)  # make doubly sure no duplicate index (datetimes)
+    logger.info('Saving appended database of historical metrics (shaped {}) to a single CSV file, so this may take a while (minutes)...'.format(
+        db.shape))
+    db.to_csv(path, compression='gzip')
+    logger.info(db.columns)
+    logger.info("Saved db.shape={} to {}".format(db.shape, path))
+    logger.debug(db.describe())
 
 
 def get_meta():
