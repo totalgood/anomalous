@@ -223,10 +223,7 @@ def clean_dd_all(df=None, fillna_method='ffill', dropna=False, consolidate_index
     df = DEFAULT_JSON_DIR if df is None else df
     df = load_all(df).astype(float) if isinstance(df, str) else pd.DataFrame(df)
 
-    df.index = pd.to_datetime(df.index.values)
-    df.sort_index(inplace=True)
-    df = df.groupby(df.index).mean()
-    df = df.reindex()
+    clean_time_series_df(df)
 
     if consolidate_index:
         df = df[~df.index.duplicated(keep='last')]
@@ -623,6 +620,7 @@ def clean_time_series_df(df):
     df = df.groupby([df.index]).mean()
     df.sort_index(inplace=True)
     df = df.reindex()
+    return df
 
 
 def update_db(db=None, metric_names=CFG.metrics, start=None, end=None, drop=False, save=True):
