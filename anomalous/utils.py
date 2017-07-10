@@ -652,7 +652,11 @@ def update_db(db=None, metric_names=CFG.metrics, start=None, end=None, drop=Fals
         db = db.append(df)
 
     df = get_dd_queries(CFG.queries, start=start, end=end)
+
+    print('before {}'.format(len(db)))
     db = db.append(df)
+    print('after {}'.format(len(db)))
+    print('inside update_db: {}'.format(len(db.loc[start:end])))
     db = clean_time_series_df(db)
     # if isinstance(dbpath, str) and save:
     #     db.to_csv(dbpath, compression='gzip')

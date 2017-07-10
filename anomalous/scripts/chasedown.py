@@ -177,8 +177,11 @@ def main(args):
         else:
             db = pd.DataFrame()
             db = db.append(df)
+        print(len(db.loc[start:end]))
         db = clean_dd_all(db)
-        df, new_anomaly_spans = plot_predictions(db.loc[start:end])
+        print(len(db.loc[start:end]))
+        if len(db.loc[start:end]):
+            df, new_anomaly_spans = plot_predictions(db.loc[start:end])
     if not cfg.noquestion:
         if not cfg.noplot:
             print('\n\nWaiting 10 seconds for plot to launch in your browser (usually Firefox) before asking about anomalies in it...\n')
