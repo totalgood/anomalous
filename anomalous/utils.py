@@ -665,7 +665,7 @@ def update_db(db=None, metric_names=CFG.metrics, start=None, end=None, drop=Fals
     logger.debug('Time span queried: {}'.format((start, end)))
     logger.debug('New db records within timepsan: {}'.format(len(db[(db.index >= start) & (db.index <= end)])))
     db = clean_time_series_df(db)
-    print('New db records within timepsan after cleanup: {}'.format(len(db[(db.index >= start) & (db.index <= end)])))
+    logger.debug('New db records within timepsan after cleanup: {}'.format(len(db[(db.index >= start) & (db.index <= end)])))
     # if isinstance(dbpath, str) and save:
     #     db.to_csv(dbpath, compression='gzip')
     #     print(db.columns)
@@ -673,7 +673,7 @@ def update_db(db=None, metric_names=CFG.metrics, start=None, end=None, drop=Fals
     #     logger.debug(db.describe())
     if isinstance(dbpath, str) and save:
         db = save_db(db, path=dbpath)
-    print('New db records within timepsan after cleanup and save: {}'.format(len(db[(db.index >= start) & (db.index <= end)])))
+    logger.debug('New db records within timepsan after cleanup and save: {}'.format(len(db[(db.index >= start) & (db.index <= end)])))
     return db
 
 

@@ -172,6 +172,7 @@ def main(args):
     logger.info(msg)
     logger.debug(df.describe())
 
+    new_anomaly_spans = []
     if not cfg.noplot or not cfg.noquestion:
         if os.path.isfile(cfg.db_csv):
             db = read_csv(cfg.db_csv)  # this should contain the updated database with the recently aquired dat
@@ -181,8 +182,8 @@ def main(args):
         logger.debug(len(db[(db.index >= start) & (db.index <= end)]))
         db = clean_dd_all(db)
         logger.debug(len(db[(db.index >= start) & (db.index <= end)]))
-        if len(db.loc[start:end]):
-            df, new_anomaly_spans = plot_predictions(db.loc[start:end])
+        if len(db[(db.index >= start) & (db.index <= end)]):
+            df, new_anomaly_spans = plot_predictions(db[(db.index >= start) & (db.index <= end)])
     if not cfg.noquestion:
         if not cfg.noplot:
             print('\n\nWaiting 10 seconds for plot to launch in your browser (usually Firefox) before asking about anomalies in it...\n')
