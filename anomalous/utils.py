@@ -657,7 +657,6 @@ def update_db(db=None, metric_names=CFG.metrics, start=None, end=None, drop=Fals
     df = get_dd_queries(CFG.queries, start=start, end=end)
     df = clean_time_series_df(df)
     logger.debug('New monitor queries (derived metrics) len {}'.format(len(df)))
-    print('update len {}'.format(len(df)))
     db = db.append(df)
 
     logger.debug('After monitor queries: {}'.format(len(db)))
