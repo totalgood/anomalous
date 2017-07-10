@@ -163,6 +163,7 @@ def main(args):
         df = df[(df.index >= start) & (df.index <= end)]
     elif cfg.file_or_none is None:
         df = update_db(metric_names=cfg.metrics, start=start, end=end, db=cfg.db_csv, drop=False, save=False)
+        df = df[(df.index >= start) & (df.index <= end)]
     else:
         df = clean_dd_df(cfg.file_or_none)
 
@@ -177,9 +178,9 @@ def main(args):
         else:
             db = pd.DataFrame()
             db = db.append(df)
-        print(len(db.loc[start:end]))
+        logger.debug(len(db[(db.index >= start) & (db.index <= end)]))
         db = clean_dd_all(db)
-        print(len(db.loc[start:end]))
+        logger.debug(len(db[(db.index >= start) & (db.index <= end)]))
         if len(db.loc[start:end]):
             df, new_anomaly_spans = plot_predictions(db.loc[start:end])
     if not cfg.noquestion:
