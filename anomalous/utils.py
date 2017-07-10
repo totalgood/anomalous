@@ -308,7 +308,7 @@ def join_spans(spans):
     return joined_spans
 
 
-def ask_if_anomalous(new_spans, human_labels_path=DEFAULT_HUMAN_PATH):
+def ask_if_anomalous(new_spans, human_labels_path=DEFAULT_HUMAN_PATH, start=None, end=None):
     """Console input by user to confirm or deny anomalous timespans"""
     try:
         df = read_csv(human_labels_path)
@@ -316,7 +316,7 @@ def ask_if_anomalous(new_spans, human_labels_path=DEFAULT_HUMAN_PATH):
         df = pd.DataFrame(columns='start end human_label'.split())
 
     columns = df.columns
-    print('Anomalous Time Spans Detected in Past 24 hours:')
+    print('Anomalous Time Spans Detected from {} to {}'.format(start, end))
     print(pd.DataFrame(new_spans, columns=columns[:2]))
     print('Refer to the time-series.html plot for this time period to determine whether these time spans were truly anomalous.')
     human_labels = pd.np.zeros(len(new_spans), dtype=int)
@@ -523,12 +523,15 @@ def get_dd_metric(name=None, servers=None, start=None, end=None):
     # series = dd.api.Metric.query(start=now - 3600 * 24, end=now, query=query)
     logger.debug('start={}, end={}, query={}'.format(start, end, query))
     series = None
+    # exponential backoff
     for fallback_exp in range(1, 8):
         series = dd.api.Metric.query(start=start, end=end, query=query)
         try:
             return clean_dd_df(series)
         except KeyError:
-            time.sleep(2 ** fallback_exp * 60)
+            sleep_seconds = 2 ** fallback_exp * 60
+            logger.info('Sleeping for {} seconds to wait for API throttling.'.format(sleep_seconds))
+            time.sleep(sleep_seconds)
     return pd.DataFrame()
 
 

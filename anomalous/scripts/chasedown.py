@@ -187,7 +187,7 @@ def main(args):
         if not cfg.noplot:
             print('\n\nWaiting 10 seconds for plot to launch in your browser (usually Firefox) before asking about anomalies in it...\n')
             time.sleep(10)  # wait for all Firefox error messages to clear the console
-        ask_if_anomalous(new_spans=new_anomaly_spans, human_labels_path=DEFAULT_HUMAN_PATH)
+        ask_if_anomalous(new_spans=new_anomaly_spans, human_labels_path=DEFAULT_HUMAN_PATH, start=start, end=end)
 
 
 def run():
